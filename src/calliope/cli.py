@@ -1,11 +1,16 @@
 """Command line entry point: calliope IN.epub OUT.epub --voice WAV --lang xx."""
 
 import argparse
+import dataclasses
+import json
 import os
 import shutil
 import signal
 import sys
+import time
 
+from calliope import __version__
+from calliope.files import atomic_write_text
 from calliope.pipeline import Options, run
 from calliope.qa import QAConfig, WhisperTranscriber
 from calliope.tts import MODELS, ChatterboxBackend, FakeBackend, resolve_model
@@ -125,7 +130,70 @@ class WhisperFactory:
         return WhisperTranscriber(self.args.whisper_model, self.args.lang, device, self.args.whisper_compute_type)
 
 
+def report_path(output):
+    """OUT.epub -> OUT.report.json, in OUT's directory."""
+    return os.path.splitext(output)[0] + ".report.json"
+
+
+RTF_DEFINITION = ("real_time_factor = wall_seconds / audio_seconds (whole run); "
+                  "synthesis_real_time_factor = synthesis_seconds / synthesized_audio_seconds "
+                  "(TTS only, this run). Below 1 is faster than real time.")
+
+
+def build_report(args, opts, status, wall_seconds, stats=None, error=None):
+    report = {
+        "status": status,
+        "calliope_version": __version__,
+        "input": os.path.abspath(args.input),
+        "output": os.path.abspath(args.output),
+        "voice": os.path.abspath(args.voice),
+        "language": args.lang,
+        "model": opts.model,
+        "work_dir": os.path.abspath(args.work_dir),
+        "settings": {
+            "seed": opts.seed,
+            "max_retries": opts.max_retries,
+            "qa": dataclasses.asdict(opts.qa),
+            "whisper_check": args.whisper_check,
+            "whisper_model": args.whisper_model if args.whisper_check else None,
+            "wer_threshold": opts.wer_threshold if args.whisper_check else None,
+        },
+        "wall_seconds": round(wall_seconds, 3),
+    }
+    if error is not None:
+        report["error"] = error
+    if stats is None:
+        return report
+
+    audio = stats["audio_seconds"]
+    synth_audio = stats["synthesized_audio_seconds"]
+    report.update({
+        "chapters": stats["chapters"],
+        "sentences": stats["sentences"],
+        "unique_clips": stats["unique_clips"],
+        "synthesized": stats["synthesized"],
+        "cached": stats["cached"],
+        "attempts_this_run": stats["attempts_this_run"],
+        "retries": stats["retries"],
+        "flagged_count": len(stats["flagged"]),
+        "flagged": stats["flagged"],
+        "audio_seconds": round(audio, 3),
+        "synthesis_seconds": round(stats["synthesis_seconds"], 3),
+        "synthesized_audio_seconds": round(synth_audio, 3),
+        "real_time_factor": round(wall_seconds / audio, 4) if audio else None,
+        "synthesis_real_time_factor": (round(stats["synthesis_seconds"] / synth_audio, 4)
+                                       if synth_audio else None),
+        "real_time_factor_definition": RTF_DEFINITION,
+    })
+    return report
+
+
+def write_report(path, report):
+    atomic_write_text(path, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+
+
 def main(argv=None):
+    started = time.monotonic()
     args = parse_arguments(argv)
     signal.signal(signal.SIGTERM, _raise_terminated)
 
@@ -143,21 +211,31 @@ def main(argv=None):
         wer_threshold=args.wer_threshold,
         force_silence=args.force_silence,
     )
+    report_file = report_path(args.output)
+    stats, status, error, code = None, "ok", None, 0
     try:
         if shutil.which("ffmpeg") is None:
             raise RuntimeError("ffmpeg not found on PATH")
         whisper = WhisperFactory(args) if args.whisper_check else None
         stats = run(opts, make_backend_factory(args), whisper)
     except Terminated:
+        status, code = "terminated", EXIT_SIGTERM
         print("calliope: terminated; finished sentences are cached in the work dir", file=sys.stderr)
-        return EXIT_SIGTERM
     except KeyboardInterrupt:
+        status, code = "interrupted", EXIT_SIGINT
         print("calliope: interrupted; finished sentences are cached in the work dir", file=sys.stderr)
-        return EXIT_SIGINT
     except Exception as e:
+        status, error, code = "failed", f"{type(e).__name__}: {e}", EXIT_FAILURE
         print(f"calliope: error: {e}", file=sys.stderr)
-        return EXIT_FAILURE
 
-    print(f"Wrote {args.output}: {stats['sentences']} sentences, {stats['synthesized']} synthesized, "
-          f"{stats['cached']} cached, {len(stats['flagged'])} flagged")
-    return 0
+    report = build_report(args, opts, status, time.monotonic() - started, stats, error)
+    try:
+        write_report(report_file, report)
+    except OSError as e:
+        print(f"calliope: could not write {report_file}: {e}", file=sys.stderr)
+        code = code or EXIT_FAILURE
+
+    if stats is not None:
+        print(f"Wrote {args.output}: {stats['sentences']} sentences, {stats['synthesized']} synthesized, "
+              f"{stats['cached']} cached, {len(stats['flagged'])} flagged; report: {report_file}")
+    return code

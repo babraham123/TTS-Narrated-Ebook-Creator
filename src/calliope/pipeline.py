@@ -234,7 +234,7 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
     log(f"{len(sentences)} sentences in {len(chapters)} chapters; "
         f"{len(unique) - len(todo)} clips done, {len(todo)} to synthesize")
 
-    synth_seconds, attempts_this_run = 0.0, 0
+    synth_seconds, synth_audio_seconds, attempts_this_run = 0.0, 0.0, 0
     if todo:
         backend = make_backend()
         t0 = time.monotonic()
@@ -242,6 +242,7 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
             result, attempts, made = _synthesize_clip(backend, s, cache, opts)
             qa[s.key] = (result, attempts)
             attempts_this_run += made
+            synth_audio_seconds += result.duration
         synth_seconds = time.monotonic() - t0
 
     wer = {}
@@ -314,5 +315,6 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
         "flagged": flagged,
         "audio_seconds": sum(durations_ms.values()) / 1000.0,
         "synthesis_seconds": synth_seconds,
+        "synthesized_audio_seconds": synth_audio_seconds,
         "wall_seconds": time.monotonic() - started,
     }
