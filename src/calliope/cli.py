@@ -2,74 +2,41 @@
 
 import argparse
 import os
-import subprocess
-import sys
 
-import numpy as np
-import soundfile as sf
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from calliope.epub import (
+    assemble_chapter,
     create_smil_content,
     detect_styles_dir,
+    encode_mp3,
     ensure_sentence_tokenizer,
     find_opf,
-    get_audio_duration,
     process_xhtml_inplace,
     unzip_epub,
     update_opf,
     write_nuclear_css,
     zip_dir,
 )
+from calliope.files import atomic_write_text
 from calliope.tts import MODELS, ChatterboxBackend, FakeBackend, resolve_model, synthesize_sentence
 
 
 def generate_media(basename, segments, backend, audio_dir, smil_dir, rel_text_path):
-    mp3_path = os.path.join(audio_dir, f"{basename}.mp3")
-    smil_path = os.path.join(smil_dir, f"{basename}.smil")
-    
-    if os.path.exists(mp3_path) and os.path.exists(smil_path):
-        print(f"  [SKIP] Audio exists: {basename}.mp3")
-        return get_audio_duration(mp3_path)
-
-    full_audio = []
-    sync_data = []
-    curr_time = 0.0
-    sr = backend.sr
-
+    """Synthesize a chapter into Audio/<basename>.mp3 and Smil/<basename>.smil; returns duration in ms."""
+    sentence_wavs = []
     for seg in tqdm(segments, desc="TTS", leave=False):
         # seg['text'] is clean text
         text = seg['text'].replace("\n", " ").strip()
         if not text: continue
+        sentence_wavs.append((seg['id'], synthesize_sentence(backend, text, seed=0)))
 
-        final_sentence_wav = synthesize_sentence(backend, text, seed=0)
-
-        dur = len(final_sentence_wav) / sr
-        start = curr_time
-        end = curr_time + dur
-
-        sync_data.append({"id": seg['id'], "start": start, "end": end})
-        full_audio.append(final_sentence_wav)
-        full_audio.append(np.zeros(int(0.15 * sr), dtype=np.float32))
-        curr_time = end + 0.15
-
-    if full_audio:
-        wav_path = os.path.join(audio_dir, f"{basename}.wav")
-        final_wav = np.concatenate(full_audio)
-        sf.write(wav_path, final_wav, sr)
-
-        subprocess.run(["ffmpeg", "-i", wav_path, "-b:a", "128k", "-y", mp3_path, "-loglevel", "error"], check=True)
-        os.remove(wav_path)
-        total_duration = curr_time
-    else:
-        total_duration = 0
-
-    smil_content = create_smil_content(basename, sync_data, f"{basename}.mp3", rel_text_path)
-    with open(smil_path, "w", encoding="utf-8") as f:
-        f.write(smil_content)
-
-    return total_duration
+    audio, clips, duration_ms = assemble_chapter(sentence_wavs, backend.sr)
+    encode_mp3(audio, backend.sr, os.path.join(audio_dir, f"{basename}.mp3"))
+    smil = create_smil_content(f"{basename}_seq", clips, f"../Audio/{basename}.mp3", rel_text_path)
+    atomic_write_text(os.path.join(smil_dir, f"{basename}.smil"), smil)
+    return duration_ms
 
 
 def parse_arguments(argv=None):

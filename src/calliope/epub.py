@@ -9,15 +9,18 @@ import zipfile
 from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 import nltk
+import numpy as np
 from bs4 import BeautifulSoup, CData, NavigableString, Tag
+
+from calliope.files import atomic_output, atomic_write_text
 
 
 # -------------------------------------------------------------------------
 # EPUB INFRASTRUCTURE
 # -------------------------------------------------------------------------
 def unzip_epub(epub_path, extract_to):
-    if os.path.exists(extract_to) and os.path.exists(os.path.join(extract_to, "META-INF")):
-        return
+    # Always start from a pristine copy: sentence wrapping edits files in place, so reusing an
+    # earlier extraction would wrap sentences twice.
     if os.path.exists(extract_to):
         shutil.rmtree(extract_to)
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
@@ -276,54 +279,94 @@ def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
 
 
 # -------------------------------------------------------------------------
-# SMIL GENERATION
+# AUDIO ENCODING & SMIL GENERATION
 # -------------------------------------------------------------------------
-def get_audio_duration(filepath):
-    try:
-        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filepath]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return float(result.stdout.strip())
-    except: return 0.0
+MP3_BITRATE = "64k"
 
-def format_time(seconds):
-    m, s = divmod(seconds, 60)
-    h, m = divmod(m, 60)
-    return f"{int(h)}:{int(m):02d}:{s:06.3f}"
 
-def create_smil_content(basename, segments, audio_filename, rel_text_path):
-    xml = '<?xml version="1.0" encoding="utf-8"?>\n'
-    xml += '<smil xmlns="http://www.w3.org/ns/SMIL" xmlns:epub="http://www.idpf.org/2007/ops" version="3.0">\n'
-    xml += '  <body>\n'
-    xml += f'    <seq id="{basename}_seq" epub:textref="{rel_text_path}">\n'
+def encode_mp3(wav, sr, mp3_path):
+    """Encode mono float audio to MP3 atomically. -bitexact keeps encoder version strings out
+    of the file so identical input gives identical bytes."""
+    pcm = (np.clip(wav, -1.0, 1.0) * 32767.0).round().astype("<i2").tobytes()
+    with atomic_output(mp3_path) as tmp:
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+             "-f", "s16le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0",
+             "-map_metadata", "-1", "-c:a", "libmp3lame", "-b:a", MP3_BITRATE,
+             "-bitexact", "-f", "mp3", tmp],
+            input=pcm, check=True,
+        )
 
-    audio_ref = f"../Audio/{audio_filename}"
 
-    for i, seg in enumerate(segments):
-        clip_start = seg['start']
-        if i < len(segments) - 1:
-            clip_end = segments[i+1]['start']
-        else:
-            clip_end = seg['end']
+SENTENCE_GAP_SECONDS = 0.15
 
-        t_start_str = format_time(clip_start)
-        t_end_str = format_time(clip_end)
-        t_id = seg['id']
 
-        xml += f'      <par id="par_{t_id}">\n'
-        xml += f'        <text src="{rel_text_path}#{t_id}"/>\n'
-        xml += f'        <audio src="{audio_ref}" clipBegin="{t_start_str}" clipEnd="{t_end_str}"/>\n'
-        xml += '      </par>\n'
+def samples_to_ms(samples, sr):
+    return (samples * 1000 + sr // 2) // sr
 
-    xml += '    </seq>\n'
-    xml += '  </body>\n'
-    xml += '</smil>'
-    return xml
+
+def assemble_chapter(sentence_wavs, sr, gap_seconds=SENTENCE_GAP_SECONDS):
+    """Concatenate (text_id, wav) pairs with a silence gap between sentences.
+
+    Returns (audio, clips, duration_ms). Timings come from integer sample counts, so they are
+    exact; each clip runs until the next one begins (the gap is highlighted with the
+    preceding sentence) and the last ends with the audio, so the overlay has no holes.
+    """
+    gap = np.zeros(int(round(gap_seconds * sr)), dtype=np.float32)
+    pieces, starts = [], []
+    cursor = 0
+    for i, (_text_id, wav) in enumerate(sentence_wavs):
+        if i:
+            pieces.append(gap)
+            cursor += len(gap)
+        starts.append(cursor)
+        pieces.append(np.asarray(wav, dtype=np.float32))
+        cursor += len(wav)
+    audio = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
+    bounds = [samples_to_ms(s, sr) for s in starts] + [samples_to_ms(cursor, sr)]
+    clips = [(text_id, bounds[i], bounds[i + 1]) for i, (text_id, _) in enumerate(sentence_wavs)]
+    return audio, clips, bounds[-1]
+
+
+def format_clock(ms):
+    """SMIL/EPUB full clock value (h:mm:ss.fff) from integer milliseconds."""
+    h, rest = divmod(ms, 3_600_000)
+    m, rest = divmod(rest, 60_000)
+    s, frac = divmod(rest, 1000)
+    return f"{h}:{m:02d}:{s:02d}.{frac:03d}"
+
+
+def create_smil_content(seq_id, clips, audio_href, text_href):
+    """clips: [(text_id, begin_ms, end_ms)] in reading order."""
+    lines = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<smil xmlns="http://www.w3.org/ns/SMIL" xmlns:epub="http://www.idpf.org/2007/ops" version="3.0">',
+        '  <body>',
+        f'    <seq id="{seq_id}" epub:textref="{text_href}">',
+    ]
+    for t_id, begin_ms, end_ms in clips:
+        lines += [
+            f'      <par id="par_{t_id}">',
+            f'        <text src="{text_href}#{t_id}"/>',
+            f'        <audio src="{audio_href}" clipBegin="{format_clock(begin_ms)}" clipEnd="{format_clock(end_ms)}"/>',
+            '      </par>',
+        ]
+    lines += ['    </seq>', '  </body>', '</smil>', '']
+    return "\n".join(lines)
 
 
 # -------------------------------------------------------------------------
 # OPF & PACKAGING
 # -------------------------------------------------------------------------
-def update_opf(opf_path, manifest_additions, spine_mapping, total_durations):
+ACTIVE_CLASS = "-epub-media-overlay-active"
+
+
+def update_opf(opf_path, manifest_additions, spine_mapping, durations_ms):
+    """Add overlay items, media-overlay attributes and media:duration / media:active-class meta.
+
+    durations_ms maps SMIL manifest id -> duration; the total is their exact sum so the
+    per-overlay and book durations always agree.
+    """
     with open(opf_path, 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f, 'xml')
 
@@ -331,21 +374,18 @@ def update_opf(opf_path, manifest_additions, spine_mapping, total_durations):
     for meta in soup.metadata.find_all("meta", property="media:active-class"): meta.decompose()
 
     meta_dur = soup.new_tag("meta", property="media:duration")
-    total_sec = sum(total_durations.values())
-    m, s = divmod(total_sec, 60)
-    h, m = divmod(m, 60)
-    meta_dur.string = f"{int(h)}:{int(m):02d}:{s:06.3f}"
+    meta_dur.string = format_clock(sum(durations_ms.values()))
     soup.metadata.append(meta_dur)
 
-    meta_active = soup.new_tag("meta", property="media:active-class")
-    meta_active.string = "-epub-media-overlay-active"
-    soup.metadata.append(meta_active)
-
-    for smil_id, dur_sec in total_durations.items():
+    for smil_id, dur_ms in durations_ms.items():
         meta = soup.new_tag("meta", property="media:duration")
         meta['refines'] = f"#{smil_id}"
-        meta.string = format_time(dur_sec)
+        meta.string = format_clock(dur_ms)
         soup.metadata.append(meta)
+
+    meta_active = soup.new_tag("meta", property="media:active-class")
+    meta_active.string = ACTIVE_CLASS
+    soup.metadata.append(meta_active)
 
     manifest = soup.manifest
     for item in manifest_additions:
@@ -353,27 +393,45 @@ def update_opf(opf_path, manifest_additions, spine_mapping, total_durations):
         if existing: existing.decompose()
 
     for item in manifest_additions:
-        new_tag = soup.new_tag("item", **item)
-        manifest.append(new_tag)
+        manifest.append(soup.new_tag("item", attrs=item))
 
     for text_id, smil_id in spine_mapping.items():
         item = manifest.find("item", id=text_id)
         if item:
             item['media-overlay'] = smil_id
 
-    xml_str = str(soup.prettify())
-    xml_str = re.sub(r'(<meta property="media:active-class"[^>]*>)\s+([^\s<]+)\s+(</meta>)', r'\1\2\3', xml_str)
-    xml_str = re.sub(r'(<opf:meta property="media:active-class"[^>]*>)\s+([^\s<]+)\s+(</opf:meta>)', r'\1\2\3', xml_str)
+    # str() rather than prettify(): prettify wraps meta values in whitespace.
+    atomic_write_text(opf_path, str(soup))
 
-    with open(opf_path, 'w', encoding='utf-8') as f:
-        f.write(xml_str)
+
+ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+_STORED_SUFFIXES = (".mp3", ".m4a", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".woff", ".woff2")
+
+
+def _zip_info(name, compress_type):
+    info = zipfile.ZipInfo(name, date_time=ZIP_EPOCH)
+    info.compress_type = compress_type
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    return info
+
 
 def zip_dir(folder, output_path):
-    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        zipf.write(os.path.join(folder, "mimetype"), "mimetype", compress_type=zipfile.ZIP_STORED)
-        for root, dirs, files in os.walk(folder):
-            for file in files:
-                if file == "mimetype": continue
-                abs_path = os.path.join(root, file)
-                rel_path = os.path.relpath(abs_path, folder)
-                zipf.write(abs_path, rel_path)
+    """Package `folder` as an EPUB atomically and reproducibly: mimetype first and stored,
+    then every other file in sorted order with fixed timestamps and permissions."""
+    rel_paths = []
+    for root, _dirs, files in os.walk(folder):
+        for file in files:
+            rel = os.path.relpath(os.path.join(root, file), folder).replace(os.sep, "/")
+            if rel != "mimetype":
+                rel_paths.append(rel)
+    rel_paths.sort()
+
+    with atomic_output(output_path) as tmp:
+        with zipfile.ZipFile(tmp, 'w') as zipf:
+            zipf.writestr(_zip_info("mimetype", zipfile.ZIP_STORED), b"application/epub+zip")
+            for rel in rel_paths:
+                stored = rel.lower().endswith(_STORED_SUFFIXES)
+                info = _zip_info(rel, zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED)
+                with open(os.path.join(folder, rel), "rb") as f:
+                    zipf.writestr(info, f.read(), compresslevel=None if stored else 9)
