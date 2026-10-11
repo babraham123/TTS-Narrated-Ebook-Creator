@@ -9,21 +9,47 @@ description = "Turn an EPUB into a narrated EPUB 3 with Media Overlays using loc
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = "==3.12.*"
 dependencies = [
-    "beautifulsoup4",
-    "lxml",
+    "beautifulsoup4>=4.12",
+    "lxml>=5",
     "nltk>=3.9",
-    "numpy",
-    "soundfile",
-    "tqdm",
+    # chatterbox-tts requires numpy < 2 on Python < 3.13.
+    "numpy>=1.26,<2",
+    "soundfile>=0.12",
+    "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
-tts = ["chatterbox-tts"]
+# torch/torchaudio match chatterbox-tts 0.1.7's own pins. On Linux they come from the
+# CUDA 12.4 index (see tool.uv.sources), whose kernels still cover Pascal (sm_61).
+tts = [
+    "chatterbox-tts==0.1.7",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+]
 
 [project.scripts]
 calliope = "calliope.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+# The lock covers the Linux x86_64 GPU target plus Apple Silicon for local development.
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/calliope"]
