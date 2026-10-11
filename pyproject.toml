@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "calliope"
+version = "0.2.0"
+description = "Turn an EPUB into a narrated EPUB 3 with Media Overlays using local TTS"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4",
+    "lxml",
+    "nltk>=3.9",
+    "numpy",
+    "soundfile",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+tts = ["chatterbox-tts"]
+
+[project.scripts]
+calliope = "calliope.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/calliope"]
