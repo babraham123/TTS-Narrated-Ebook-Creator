@@ -1,182 +1,112 @@
-"""Command line entry point: EPUB in, EPUB 3 with Media Overlays out."""
+"""Command line entry point: calliope IN.epub OUT.epub --voice WAV --lang xx."""
 
 import argparse
 import os
+import shutil
+import signal
+import sys
 
-from bs4 import BeautifulSoup
-from tqdm import tqdm
+from calliope.pipeline import Options, run
+from calliope.tts import MODELS, ChatterboxBackend, FakeBackend, resolve_model
 
-from calliope.epub import (
-    assemble_chapter,
-    create_smil_content,
-    detect_styles_dir,
-    encode_mp3,
-    ensure_sentence_tokenizer,
-    find_opf,
-    process_xhtml_inplace,
-    unzip_epub,
-    update_opf,
-    write_nuclear_css,
-    zip_dir,
-)
-from calliope.files import atomic_write_text
-from calliope.tts import MODELS, ChatterboxBackend, FakeBackend, resolve_model, synthesize_sentence
+EXIT_FAILURE = 1
+EXIT_SIGINT = 130
+EXIT_SIGTERM = 143
 
 
-def generate_media(basename, segments, backend, audio_dir, smil_dir, rel_text_path):
-    """Synthesize a chapter into Audio/<basename>.mp3 and Smil/<basename>.smil; returns duration in ms."""
-    sentence_wavs = []
-    for seg in tqdm(segments, desc="TTS", leave=False):
-        # seg['text'] is clean text
-        text = seg['text'].replace("\n", " ").strip()
-        if not text: continue
-        sentence_wavs.append((seg['id'], synthesize_sentence(backend, text, seed=0)))
+class Terminated(BaseException):
+    """Raised from the SIGTERM handler so cleanup (temp file removal) runs on the way out."""
 
-    audio, clips, duration_ms = assemble_chapter(sentence_wavs, backend.sr)
-    encode_mp3(audio, backend.sr, os.path.join(audio_dir, f"{basename}.mp3"))
-    smil = create_smil_content(f"{basename}_seq", clips, f"../Audio/{basename}.mp3", rel_text_path)
-    atomic_write_text(os.path.join(smil_dir, f"{basename}.smil"), smil)
-    return duration_ms
+
+def _raise_terminated(signum, frame):
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)  # a second SIGTERM kills immediately
+    raise Terminated()
+
+
+def default_work_dir(output):
+    out_dir = os.path.dirname(os.path.abspath(output))
+    stem = os.path.splitext(os.path.basename(output))[0]
+    return os.path.join(out_dir, f".{stem}.calliope-work")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="calliope",
+        description="Convert an EPUB into an EPUB 3 with Media Overlays narrated by Chatterbox TTS.",
+    )
+    parser.add_argument("input", help="input .epub")
+    parser.add_argument("output", help="output .epub")
+    parser.add_argument("--voice", "-v", required=True, help="reference voice sample (WAV, longer than 5 s)")
+    parser.add_argument("--lang", "--language", "-l", dest="lang", default="en",
+                        help="book language code (default: en)")
+    parser.add_argument("--model", choices=MODELS, default=None,
+                        help="Chatterbox model; default: turbo for --lang en, multilingual otherwise "
+                             "(turbo is English-only)")
+    parser.add_argument("--work-dir", default=None,
+                        help="sentence cache and scratch space; rerunning with the same work dir resumes "
+                             "(default: .<OUT stem>.calliope-work next to OUT)")
+    parser.add_argument("--device", default="auto", help="torch device: auto (default), cuda, cpu")
+    parser.add_argument("--seed", type=int, default=0, help="base random seed (default: 0)")
+    parser.add_argument("--skip-audio", action="store_true",
+                        help="debug layout without TTS: narrate with a placeholder tone, no model load")
+    return parser
 
 
 def parse_arguments(argv=None):
-    parser = argparse.ArgumentParser(
-        prog="calliope",
-        description="Generative Audiobook Creator (Chatterbox): Convert EPUB to EPUB 3 with Media Overlays."
-    )
-
-    parser.add_argument("input_epub", help="Path to the input .epub file")
-    parser.add_argument("--voice", "-v", required=True, help="Path to the reference voice sample (.wav)")
-    parser.add_argument("--output", "-o", help="Path for the output .epub file")
-    parser.add_argument("--language", "-l", default="en", help="Language code (default: en)")
-    parser.add_argument("--model", choices=MODELS, default=None,
-                        help="Chatterbox model: turbo (English only) or multilingual. "
-                             "Default: turbo for --language en, multilingual otherwise")
-    parser.add_argument("--device", default="auto", help="Torch device: auto (default), cuda, cpu")
-    parser.add_argument("--skip-audio", action="store_true",
-                        help="Debug layout without TTS: narrate with a placeholder tone, no model load")
-
+    parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        args.model = resolve_model(args.model, args.language)
+        args.model = resolve_model(args.model, args.lang)
     except ValueError as e:
         parser.error(str(e))
+    if not os.path.isfile(args.input):
+        parser.error(f"input not found: {args.input}")
+    if not os.path.isfile(args.voice):
+        parser.error(f"voice sample not found: {args.voice}")
+    if os.path.abspath(args.input) == os.path.abspath(args.output):
+        parser.error("output must differ from input")
+    args.work_dir = args.work_dir or default_work_dir(args.output)
     return args
+
+
+def make_backend_factory(args):
+    if args.skip_audio:
+        return lambda: FakeBackend(delay=float(os.environ.get("CALLIOPE_FAKE_DELAY", "0")))
+
+    def load():
+        print(f"Loading Chatterbox {args.model} on {args.device}...")
+        return ChatterboxBackend(args.model, args.lang, args.voice, args.device)
+
+    return load
 
 
 def main(argv=None):
     args = parse_arguments(argv)
+    signal.signal(signal.SIGTERM, _raise_terminated)
 
-    INPUT_EPUB = args.input_epub
-    SPEAKER_WAV = args.voice
-    BOOK_LANGUAGE = args.language
+    opts = Options(
+        input=args.input,
+        output=args.output,
+        voice=args.voice,
+        lang=args.lang,
+        model="fake" if args.skip_audio else args.model,
+        work_dir=args.work_dir,
+        seed=args.seed,
+    )
+    try:
+        if shutil.which("ffmpeg") is None:
+            raise RuntimeError("ffmpeg not found on PATH")
+        stats = run(opts, make_backend_factory(args))
+    except Terminated:
+        print("calliope: terminated; finished sentences are cached in the work dir", file=sys.stderr)
+        return EXIT_SIGTERM
+    except KeyboardInterrupt:
+        print("calliope: interrupted; finished sentences are cached in the work dir", file=sys.stderr)
+        return EXIT_SIGINT
+    except Exception as e:
+        print(f"calliope: error: {e}", file=sys.stderr)
+        return EXIT_FAILURE
 
-    input_basename = os.path.splitext(os.path.basename(INPUT_EPUB))[0]
-    default_filename = f"{input_basename}_Narrated_Chatterbox.epub"
-
-    if args.output:
-        if os.path.isdir(args.output) or args.output.endswith(os.sep):
-            os.makedirs(args.output, exist_ok=True)
-            OUTPUT_EPUB = os.path.join(args.output, default_filename)
-        else:
-            OUTPUT_EPUB = args.output
-            parent_dir = os.path.dirname(os.path.abspath(OUTPUT_EPUB))
-            if parent_dir: os.makedirs(parent_dir, exist_ok=True)
-    else:
-        input_dir = os.path.dirname(os.path.abspath(INPUT_EPUB))
-        OUTPUT_EPUB = os.path.join(input_dir, default_filename)
-
-    input_dir = os.path.dirname(os.path.abspath(INPUT_EPUB))
-    book_basename = os.path.splitext(os.path.basename(INPUT_EPUB))[0]
-    WORK_DIR = os.path.join(input_dir, f".{book_basename}_workdir")
-
-    print(f"=== STARTING CHATTERBOX PIPELINE ===")
-    print(f"Input:  {INPUT_EPUB}")
-    print(f"Output: {OUTPUT_EPUB}")
-    print(f"Features: Smart Split + Ellipsis + Crossfade ENABLED")
-
-    if not os.path.exists(INPUT_EPUB):
-        print(f"Error: Input file not found: {INPUT_EPUB}")
-        return 1
-    if not os.path.exists(SPEAKER_WAV):
-        print(f"Error: Voice sample not found: {SPEAKER_WAV}")
-        return 1
-
-    ensure_sentence_tokenizer()
-
-    unzip_epub(INPUT_EPUB, WORK_DIR)
-    opf_path, oebps_dir = find_opf(WORK_DIR)
-
-    with open(opf_path, 'r') as f: soup = BeautifulSoup(f, 'xml')
-    styles_dir, styles_rel_prefix = detect_styles_dir(soup.manifest, oebps_dir)
-
-    audio_dir = os.path.join(oebps_dir, "Audio")
-    smil_dir = os.path.join(oebps_dir, "Smil")
-    os.makedirs(audio_dir, exist_ok=True)
-    os.makedirs(smil_dir, exist_ok=True)
-    os.makedirs(styles_dir, exist_ok=True)
-
-    css_name = "sync_highlight.css"
-    write_nuclear_css(styles_dir, css_name)
-
-    print("\n--- Processing Content ---")
-    manifest = soup.manifest
-    spine = soup.spine
-
-    if args.skip_audio:
-        tts = FakeBackend()
-        print("[INFO] --skip-audio: narrating with a placeholder tone")
-    else:
-        print(f"Loading Chatterbox {args.model} on {args.device}...")
-        tts = ChatterboxBackend(args.model, BOOK_LANGUAGE, SPEAKER_WAV, args.device)
-
-    manifest_additions = []
-    manifest_additions.append({"id": "sync_css", "href": f"{styles_rel_prefix}/{css_name}", "media-type": "text/css"})
-
-    spine_mapping = {}
-    total_durations = {}
-    global_id = 1
-    processed_files = set()
-
-    for itemref in spine.find_all("itemref"):
-        item_id = itemref['idref']
-        item = manifest.find("item", id=item_id)
-        if not item or item['media-type'] != "application/xhtml+xml":
-            continue
-
-        filename = item['href']
-        full_path = os.path.join(oebps_dir, filename)
-        basename = os.path.splitext(os.path.basename(filename))[0]
-
-        if full_path in processed_files or item.get('properties') == 'nav':
-            continue
-        processed_files.add(full_path)
-
-        rel_text_path = f"../{filename}"
-        rel_css = os.path.relpath(os.path.join(styles_dir, css_name), os.path.dirname(full_path))
-
-        print(f"Processing: {basename}")
-
-        segments, global_id = process_xhtml_inplace(full_path, global_id, rel_css, BOOK_LANGUAGE)
-
-        if not segments: continue
-
-        duration = generate_media(basename, segments, tts, audio_dir, smil_dir, rel_text_path)
-
-        smil_id = f"smil_{basename}"
-        audio_id = f"audio_{basename}"
-
-        manifest_additions.append({"id": smil_id, "href": f"Smil/{basename}.smil", "media-type": "application/smil+xml"})
-        manifest_additions.append({"id": audio_id, "href": f"Audio/{basename}.mp3", "media-type": "audio/mpeg"})
-
-        spine_mapping[item_id] = smil_id
-        total_durations[smil_id] = duration
-
-    print("\n--- Updating Metadata ---")
-    update_opf(opf_path, manifest_additions, spine_mapping, total_durations)
-
-    print("\n--- Packaging EPUB ---")
-    zip_dir(WORK_DIR, OUTPUT_EPUB)
-
-    print(f"\nSUCCESS! Saved to: {OUTPUT_EPUB}")
+    print(f"Wrote {args.output}: {stats['sentences']} sentences, {stats['synthesized']} synthesized, "
+          f"{stats['cached']} cached")
     return 0
