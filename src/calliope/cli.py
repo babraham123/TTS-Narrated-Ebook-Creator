@@ -211,7 +211,7 @@ def main(argv=None):
 
         print(f"Processing: {basename}")
 
-        segments, global_id = process_xhtml_inplace(full_path, global_id, rel_css)
+        segments, global_id = process_xhtml_inplace(full_path, global_id, rel_css, BOOK_LANGUAGE)
 
         if not segments: continue
 

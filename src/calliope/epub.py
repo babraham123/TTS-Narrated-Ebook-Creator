@@ -6,9 +6,10 @@ import shutil
 import subprocess
 import unicodedata
 import zipfile
+from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 import nltk
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, CData, NavigableString, Tag
 
 
 # -------------------------------------------------------------------------
@@ -70,185 +71,203 @@ def ensure_sentence_tokenizer():
 # -------------------------------------------------------------------------
 # TEXT PROCESSING (HTML-PRESERVING DOM TRAVERSAL)
 # -------------------------------------------------------------------------
+_APOSTROPHE = re.compile(r"(?<=\w)['\N{LEFT SINGLE QUOTATION MARK}\N{RIGHT SINGLE QUOTATION MARK}](?=\w)")
+_QUOTES = re.compile(
+    r"[\"'\N{LEFT DOUBLE QUOTATION MARK}\N{RIGHT DOUBLE QUOTATION MARK}"
+    r"\N{LEFT SINGLE QUOTATION MARK}\N{RIGHT SINGLE QUOTATION MARK}"
+    r"\N{LEFT-POINTING DOUBLE ANGLE QUOTATION MARK}\N{RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK}]"
+)
+# Letters and digits of every script survive; CJK sentence punctuation is kept for prosody.
+_DISALLOWED = re.compile(r"[^\w\s.,?!;:'\-\N{IDEOGRAPHIC FULL STOP}\N{IDEOGRAPHIC COMMA}]")
+_APOSTROPHE_PLACEHOLDER = chr(0xE000)  # private-use character, never present in book text
+
+# Punkt models shipped in NLTK's punkt_tab, keyed by the TTS language code.
+PUNKT_LANGUAGES = {
+    "cs": "czech", "da": "danish", "de": "german", "el": "greek", "en": "english",
+    "es": "spanish", "et": "estonian", "fi": "finnish", "fr": "french", "it": "italian",
+    "ml": "malayalam", "nl": "dutch", "no": "norwegian", "pl": "polish", "pt": "portuguese",
+    "ru": "russian", "sl": "slovene", "sv": "swedish", "tr": "turkish",
+}
+_CJK_SENTENCE_END = re.compile(
+    r"(?<=[\N{IDEOGRAPHIC FULL STOP}\N{FULLWIDTH EXCLAMATION MARK}\N{FULLWIDTH QUESTION MARK}!?])"
+)
+
+BLOCK_TAGS = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'div']
+VOID_TAGS = {'br', 'img', 'hr', 'area', 'base', 'col', 'embed', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
+XHTML_NS = "http://www.w3.org/1999/xhtml"
+OPS_NS = "http://www.idpf.org/2007/ops"
+
+
+def split_sentences(text, lang="en"):
+    """Sentence-split with the punkt model for `lang` (English fallback); punkt has no CJK model."""
+    if lang in ("zh", "ja"):
+        return [s for s in (part.strip() for part in _CJK_SENTENCE_END.split(text)) if s]
+    return nltk.sent_tokenize(text, language=PUNKT_LANGUAGES.get(lang, "english"))
+
+
 def clean_text_for_tts(text):
     """
     Cleans text for TTS only. Visual text remains untouched.
     """
     text = unicodedata.normalize('NFKC', text)
     text = re.sub(r'\.\s\.\s\.', '...', text)
-    text = text.replace('—', ', ').replace('–', '-')
-    text = re.sub(r'(?<=[a-zA-Z])[\u2018\u2019\u0027](?=[a-zA-Z])', '___APO___', text)
-    text = re.sub(r'["“”‘’\']', '', text)
-    text = text.replace('___APO___', "'")
+    text = re.sub(r'\s*—\s*', ', ', text).replace('–', '-').replace('_', ' ')
+    text = _APOSTROPHE.sub(_APOSTROPHE_PLACEHOLDER, text)
+    text = _QUOTES.sub('', text)
+    text = text.replace(_APOSTROPHE_PLACEHOLDER, "'")
     text = re.sub(r'[!]{2,}', '!', text)
     text = re.sub(r'[?]{2,}', '?', text)
-    allowed = re.compile(r"[^a-zA-Z0-9\s.,?!;:'-]")
-    text = allowed.sub("", text)
+    text = _DISALLOWED.sub("", text)
     return re.sub(r'\s+', ' ', text).strip()
 
-def process_xhtml_inplace(filepath, global_id_start, css_rel_path):
+
+def _qualified_name(node):
+    return f"{node.prefix}:{node.name}" if node.prefix else node.name
+
+
+def _open_tag(name, attrs):
+    attr_str = " ".join(f"{k}={quoteattr(v)}" for k, v in attrs.items())
+    return f"<{name} {attr_str}>" if attr_str else f"<{name}>"
+
+
+def _sentence_boundaries(full_text_raw, sentences_clean):
+    """Map each whitespace-normalised sentence back to its end offset in the raw text."""
+    split_indices = []
+    cursor_raw = 0
+    for sent_clean in sentences_clean:
+        pattern = re.compile(re.escape(sent_clean).replace(r'\ ', r'\s+'))
+        match = pattern.search(full_text_raw, cursor_raw)
+        if match:
+            end_raw = match.end()
+            while end_raw < len(full_text_raw) and full_text_raw[end_raw].isspace():
+                end_raw += 1
+            cursor_raw = end_raw
+        else:
+            cursor_raw = len(full_text_raw)  # Fallback
+        split_indices.append(cursor_raw)
+    return split_indices
+
+
+def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
+    """Wrap every sentence of `filepath` in <span id="fNNNNNN"> and return the TTS segments.
+
+    Raises on malformed content rather than silently leaving a chapter un-narrated.
+    """
     filename = os.path.basename(filepath)
     print(f"Processing: {filename}")
 
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            soup = BeautifulSoup(f, 'xml')
+    with open(filepath, 'r', encoding='utf-8') as f:
+        soup = BeautifulSoup(f, 'xml')
 
-        # Cleanup & CSS
-        for tag in soup.find_all("a"):
-            if "noteref" in tag.get("class", []) or tag.get("role") == "doc-noteref": tag.decompose()
+    # Cleanup & CSS
+    for tag in soup.find_all("a"):
+        if "noteref" in tag.get("class", []) or tag.get("role") == "doc-noteref": tag.decompose()
 
-        head = soup.find('head')
-        if head:
-            css_name = os.path.basename(css_rel_path)
-            if not any(css_name in l.get('href', '') for l in head.find_all('link')):
-                head.append(soup.new_tag("link", rel="stylesheet", href=css_rel_path, type="text/css"))
+    head = soup.find('head')
+    if head:
+        css_name = os.path.basename(css_rel_path)
+        if not any(css_name in l.get('href', '') for l in head.find_all('link')):
+            head.append(soup.new_tag("link", rel="stylesheet", href=css_rel_path, type="text/css"))
 
-        segments = []
-        current_id = global_id_start
-        block_tags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'div']
-        VOID_TAGS = {'br', 'img', 'hr', 'area', 'base', 'col', 'embed', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
+    segments = []
+    current_id = global_id_start
 
-        for tag in soup.find_all(block_tags):
-            if tag.find(block_tags): continue
+    for tag in soup.find_all(BLOCK_TAGS):
+        if tag.find(BLOCK_TAGS): continue
 
-            full_text_raw = tag.get_text()
-            if not full_text_raw.strip(): continue
+        # get_text() counts only text and CDATA nodes, so traverse() must skip everything else
+        # (comments, processing instructions) to keep the character offsets aligned.
+        full_text_raw = tag.get_text()
+        if not full_text_raw.strip(): continue
 
-            # Clean for NLTK
-            full_text_clean = re.sub(r'\s+', ' ', full_text_raw).strip()
-            sentences_clean = nltk.sent_tokenize(full_text_clean)
-            if not sentences_clean: continue
+        full_text_clean = re.sub(r'\s+', ' ', full_text_raw).strip()
+        sentences_clean = split_sentences(full_text_clean, lang)
+        if not sentences_clean: continue
 
-            # 1. Fuzzy Boundary Calc
-            split_indices = []
-            cursor_raw = 0
-            for i, sent_clean in enumerate(sentences_clean):
-                safe_sent = re.escape(sent_clean)
-                pattern_str = safe_sent.replace(r'\ ', r'\s+')
-                pattern = re.compile(pattern_str)
-                match = pattern.search(full_text_raw, cursor_raw)
+        split_indices = _sentence_boundaries(full_text_raw, sentences_clean)
 
-                if match:
-                    end_raw = match.end()
-                    while end_raw < len(full_text_raw) and full_text_raw[end_raw].isspace():
-                        end_raw += 1
-                    cursor_raw = end_raw
-                else:
-                    cursor_raw = len(full_text_raw) # Fallback
-                split_indices.append(cursor_raw)
+        parts = []
+        current_sent_idx = 0
+        current_char_count = 0
 
-            # 2. Reconstruction
-            new_html_content = ""
-            current_sent_idx = 0
-            current_char_count = 0
-
+        def open_sentence(open_tags):
+            nonlocal current_id
             seg_id = f"f{current_id:06d}"
-            segments.append({"id": seg_id, "text": clean_text_for_tts(sentences_clean[0])})
             current_id += 1
+            segments.append({"id": seg_id, "text": clean_text_for_tts(sentences_clean[current_sent_idx])})
+            parts.append(f'<span id="{seg_id}">')
+            for t_name, t_attrs in open_tags:
+                parts.append(_open_tag(t_name, t_attrs))
 
-            new_html_content += f'<span id="{seg_id}">'
+        def close_sentence(open_tags):
+            nonlocal current_sent_idx
+            for t_name, _ in reversed(open_tags):
+                parts.append(f"</{t_name}>")
+            parts.append("</span>")
+            current_sent_idx += 1
+            if current_sent_idx < len(sentences_clean):
+                open_sentence(open_tags)
+            else:
+                # Trailing text outside any sentence still needs its inline wrappers.
+                for t_name, t_attrs in open_tags:
+                    parts.append(_open_tag(t_name, t_attrs))
 
-            def traverse(node, open_tags):
-                nonlocal new_html_content, current_char_count, current_sent_idx, current_id
+        def traverse(node, open_tags):
+            nonlocal current_char_count
 
-                if isinstance(node, str):
-                    text = str(node)
-                    while len(text) > 0:
-                        if current_sent_idx >= len(split_indices):
-                            new_html_content += text
-                            current_char_count += len(text)
-                            break
+            if isinstance(node, NavigableString):
+                if type(node) not in (NavigableString, CData):
+                    return
+                text = str(node)
+                while text:
+                    if current_sent_idx >= len(split_indices):
+                        parts.append(xml_escape(text))
+                        current_char_count += len(text)
+                        break
 
-                        boundary = split_indices[current_sent_idx]
-                        remaining_len = boundary - current_char_count
+                    remaining_len = split_indices[current_sent_idx] - current_char_count
+                    if remaining_len <= 0:
+                        # Boundary reached exactly at a node edge: switch sentence, consume nothing.
+                        close_sentence(open_tags)
+                        continue
 
-                        # --- THE FIX IS HERE ---
-                        # If we have reached (or passed) the boundary exactly at the end of this node,
-                        # we must TRIGGER THE SPLIT logic to register the next sentence.
+                    if len(text) <= remaining_len:
+                        parts.append(xml_escape(text))
+                        current_char_count += len(text)
+                        break
 
-                        if remaining_len <= 0:
-                            # Exact match or drift
+                    parts.append(xml_escape(text[:remaining_len]))
+                    current_char_count += remaining_len
+                    text = text[remaining_len:]
+                    close_sentence(open_tags)
 
-                            # Close current
-                            for t_name, _ in reversed(open_tags): new_html_content += f"</{t_name}>"
-                            new_html_content += "</span>"
+            elif isinstance(node, Tag):
+                name = _qualified_name(node)
+                attrs = {k: " ".join(v) if isinstance(v, list) else v for k, v in node.attrs.items()}
+                if node.name in VOID_TAGS:
+                    parts.append(_open_tag(name, attrs)[:-1] + " />")
+                else:
+                    open_tags.append((name, attrs))
+                    parts.append(_open_tag(name, attrs))
+                    for child in node.contents:
+                        traverse(child, open_tags)
+                    parts.append(f"</{name}>")
+                    open_tags.pop()
 
-                            # Increment Index
-                            current_sent_idx += 1
+        open_sentence([])
+        for child in list(tag.contents):
+            traverse(child, [])
+        if current_sent_idx < len(sentences_clean):
+            parts.append("</span>")
 
-                            # Start Next (if exists)
-                            if current_sent_idx < len(sentences_clean):
-                                seg_id = f"f{current_id:06d}"
-                                current_id += 1
-                                segments.append({"id": seg_id, "text": clean_text_for_tts(sentences_clean[current_sent_idx])})
-
-                                new_html_content += f'<span id="{seg_id}">'
-                                for t_name, t_attrs in open_tags:
-                                    attr_str = " ".join([f'{k}="{v}"' for k,v in t_attrs.items()])
-                                    new_html_content += f"<{t_name} {attr_str}>" if attr_str else f"<{t_name}>"
-
-                            # Note: We do NOT consume text here because remaining_len was 0.
-                            # We just perform the state switch and loop again to process the text
-                            # (which now belongs to the new sentence) or exit if text is empty.
-                            continue
-
-                        # Normal Processing
-                        if len(text) <= remaining_len:
-                            new_html_content += text
-                            current_char_count += len(text)
-                            break
-                        else:
-                            # Split in middle of node
-                            chunk = text[:remaining_len]
-                            new_html_content += chunk
-                            current_char_count += len(chunk)
-
-                            for t_name, _ in reversed(open_tags): new_html_content += f"</{t_name}>"
-                            new_html_content += "</span>"
-
-                            current_sent_idx += 1
-                            if current_sent_idx < len(sentences_clean):
-                                seg_id = f"f{current_id:06d}"
-                                current_id += 1
-                                segments.append({"id": seg_id, "text": clean_text_for_tts(sentences_clean[current_sent_idx])})
-
-                                new_html_content += f'<span id="{seg_id}">'
-                                for t_name, t_attrs in open_tags:
-                                    attr_str = " ".join([f'{k}="{v}"' for k,v in t_attrs.items()])
-                                    new_html_content += f"<{t_name} {attr_str}>" if attr_str else f"<{t_name}>"
-
-                            text = text[remaining_len:]
-
-                elif node.name:
-                    attrs = {k: " ".join(v) if isinstance(v, list) else v for k, v in node.attrs.items()}
-                    attr_str = " ".join([f'{k}="{v}"' for k,v in attrs.items()])
-                    tag_open = f"<{node.name} {attr_str}>" if attr_str else f"<{node.name}>"
-
-                    if node.name in VOID_TAGS:
-                        new_html_content += tag_open.replace(">", " />")
-                    else:
-                        open_tags.append((node.name, attrs))
-                        new_html_content += tag_open
-                        for child in node.contents:
-                            traverse(child, open_tags)
-                        new_html_content += f"</{node.name}>"
-                        open_tags.pop()
-
-            for child in tag.contents:
-                traverse(child, [])
-
-            new_html_content += "</span>"
-
-            wrapped_content = f"<body>{new_html_content}</body>"
-            new_soup = BeautifulSoup(wrapped_content, 'xml')
-            tag.clear()
-            if new_soup.body:
-                for child in list(new_soup.body.contents): tag.append(child)
-
-    except Exception as e:
-        print(f"  [ERROR] Failed to process {filename}: {e}")
-        return [], global_id_start
+        # Declare the namespaces the fragment may use so prefixed names (epub:type) parse.
+        wrapped_content = f'<body xmlns="{XHTML_NS}" xmlns:epub="{OPS_NS}">{"".join(parts)}</body>'
+        new_soup = BeautifulSoup(wrapped_content, 'xml')
+        if new_soup.body is None:
+            raise ValueError(f"{filename}: could not re-parse sentence markup in <{tag.name}>")
+        tag.clear()
+        for child in list(new_soup.body.contents):
+            tag.append(child)
 
     with open(filepath, 'w', encoding='utf-8') as f:
         # Use str(soup) instead of prettify to prevent injecting unwanted whitespace
