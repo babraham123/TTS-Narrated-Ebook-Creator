@@ -1,6 +1,8 @@
-"""Chatterbox TTS wrapper plus the text chunking and crossfade helpers around it.
+"""TTS backends (Chatterbox Turbo/Multilingual and a fake tone generator) plus the
+text chunking and crossfade helpers around them.
 
-torch and chatterbox are imported lazily so the EPUB tooling can be used without them.
+torch and chatterbox are imported only when a ChatterboxBackend is constructed, so the
+rest of the pipeline (and the fake backend) runs without them installed.
 """
 
 import re
@@ -90,38 +92,90 @@ def crossfade_audio_segments(wav_list, fade_ms=CROSSFADE_MS, sr=SAMPLE_RATE):
     return combined
 
 
-def check_cuda():
-    import torch
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
+# -------------------------------------------------------------------------
+# BACKENDS
+# -------------------------------------------------------------------------
+MODELS = ("turbo", "multilingual")
 
 
-def load_chatterbox(device):
-    try:
-        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-    except ImportError:
-        raise SystemExit("Error: Chatterbox not found. Please run: pip install chatterbox-tts")
-    return ChatterboxMultilingualTTS.from_pretrained(device=device)
+def resolve_model(model, lang):
+    """Default to Turbo for English and Multilingual otherwise; Turbo is English-only."""
+    if model is None:
+        return "turbo" if lang == "en" else "multilingual"
+    if model not in MODELS:
+        raise ValueError(f"unknown model {model!r}; choose from {', '.join(MODELS)}")
+    if model == "turbo" and lang != "en":
+        raise ValueError(f"Chatterbox Turbo is English-only; use --model multilingual for --lang {lang}")
+    return model
 
 
-def generate_tts_chunk_chatterbox(model, text, speaker, lang):
-    """
-    Basic wrapper for Chatterbox generation of a single chunk.
-    """
-    clean_chunk = text.replace("\n", " ").strip()
-    if not clean_chunk: return np.zeros(24000)
+class ChatterboxBackend:
+    """Chatterbox Turbo (chatterbox.tts_turbo.ChatterboxTurboTTS) or Multilingual
+    (chatterbox.mtl_tts.ChatterboxMultilingualTTS), conditioned once on the voice sample."""
 
-    try:
-        wav = model.generate(
-            text=clean_chunk,
-            language_id=lang,
-            audio_prompt_path=speaker
-        )
-        if hasattr(wav, "cpu"):
-            wav = wav.cpu().numpy()
-        return wav.flatten()
+    def __init__(self, model, lang, voice, device="auto"):
+        import torch
 
-    except Exception as e:
-        print(f"\n[Chatterbox Error] Failed on '{clean_chunk[:20]}...': {e}")
-        return np.zeros(24000)
+        if model == "turbo":
+            from chatterbox.tts_turbo import ChatterboxTurboTTS as model_cls
+        else:
+            from chatterbox.mtl_tts import SUPPORTED_LANGUAGES
+            from chatterbox.mtl_tts import ChatterboxMultilingualTTS as model_cls
+
+            if lang not in SUPPORTED_LANGUAGES:
+                raise ValueError(f"Chatterbox Multilingual does not support {lang!r}; "
+                                 f"supported: {', '.join(sorted(SUPPORTED_LANGUAGES))}")
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        self._torch = torch
+        self.name = model
+        self.lang = lang
+        self.device = device
+        self.model = model_cls.from_pretrained(device=device)
+        # Conditioning once instead of per generate() call avoids re-embedding the voice per chunk.
+        self.model.prepare_conditionals(voice)
+        self.sr = self.model.sr
+
+    def generate(self, text, seed):
+        torch = self._torch
+        torch.manual_seed(seed)  # seeds CUDA as well; sampling in Chatterbox is torch-only
+        with torch.inference_mode():
+            if self.name == "turbo":
+                wav = self.model.generate(text)
+            else:
+                wav = self.model.generate(text, language_id=self.lang)
+        return wav.squeeze(0).float().cpu().numpy()
+
+
+class FakeBackend:
+    """Deterministic stand-in for tests and layout debugging: a tone whose length scales with
+    the text. Needs neither torch nor a model download."""
+
+    name = "fake"
+    sr = SAMPLE_RATE
+    chars_per_second = 14.0
+
+    def __init__(self, delay=0.0):
+        self.delay = delay
+
+    def generate(self, text, seed):
+        if self.delay:
+            import time
+            time.sleep(self.delay)
+        rng = np.random.default_rng(seed)
+        n = int(self.sr * (0.2 + len(text) / self.chars_per_second))
+        freq = 160.0 + float(rng.integers(0, 160))
+        t = np.arange(n, dtype=np.float64) / self.sr
+        return (0.3 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+
+
+def synthesize_sentence(backend, text, seed):
+    """Synthesize one sentence, splitting long text into chunks joined with a crossfade."""
+    chunks = apply_ellipsis_to_chunks(smart_split_text(text))
+    wavs = [backend.generate(chunk, (seed + i * 7919) % 2**32) for i, chunk in enumerate(chunks)]
+    if len(wavs) == 1:
+        return np.asarray(wavs[0], dtype=np.float32)
+    return crossfade_audio_segments(wavs, sr=backend.sr)
+
+

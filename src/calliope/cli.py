@@ -22,20 +22,13 @@ from calliope.epub import (
     write_nuclear_css,
     zip_dir,
 )
-from calliope.tts import (
-    apply_ellipsis_to_chunks,
-    check_cuda,
-    crossfade_audio_segments,
-    generate_tts_chunk_chatterbox,
-    load_chatterbox,
-    smart_split_text,
-)
+from calliope.tts import MODELS, ChatterboxBackend, FakeBackend, resolve_model, synthesize_sentence
 
 
-def generate_media(basename, segments, model, speaker, lang, audio_dir, smil_dir, rel_text_path, generate_audio_flag):
+def generate_media(basename, segments, backend, audio_dir, smil_dir, rel_text_path):
     mp3_path = os.path.join(audio_dir, f"{basename}.mp3")
     smil_path = os.path.join(smil_dir, f"{basename}.smil")
-
+    
     if os.path.exists(mp3_path) and os.path.exists(smil_path):
         print(f"  [SKIP] Audio exists: {basename}.mp3")
         return get_audio_duration(mp3_path)
@@ -43,55 +36,34 @@ def generate_media(basename, segments, model, speaker, lang, audio_dir, smil_dir
     full_audio = []
     sync_data = []
     curr_time = 0.0
-    sr = 24000
+    sr = backend.sr
 
-    if generate_audio_flag:
-        for seg in tqdm(segments, desc="TTS", leave=False):
-            # seg['text'] is clean text
-            text = seg['text'].replace("\n", " ").strip()
-            if not text: continue
+    for seg in tqdm(segments, desc="TTS", leave=False):
+        # seg['text'] is clean text
+        text = seg['text'].replace("\n", " ").strip()
+        if not text: continue
 
-            # --- 1. SMART SPLIT ---
-            chunks = smart_split_text(text)
+        final_sentence_wav = synthesize_sentence(backend, text, seed=0)
 
-            # --- 2. ELLIPSIS PROSODY ---
-            chunks = apply_ellipsis_to_chunks(chunks)
+        dur = len(final_sentence_wav) / sr
+        start = curr_time
+        end = curr_time + dur
 
-            # --- 3. GENERATION ---
-            chunk_wavs = []
-            for chunk in chunks:
-                w = generate_tts_chunk_chatterbox(model, chunk, speaker, lang)
-                chunk_wavs.append(w)
+        sync_data.append({"id": seg['id'], "start": start, "end": end})
+        full_audio.append(final_sentence_wav)
+        full_audio.append(np.zeros(int(0.15 * sr), dtype=np.float32))
+        curr_time = end + 0.15
 
-            # --- 4. CROSSFADE ---
-            if len(chunk_wavs) > 1:
-                final_sentence_wav = crossfade_audio_segments(chunk_wavs, fade_ms=50)
-            else:
-                final_sentence_wav = np.concatenate(chunk_wavs) if chunk_wavs else np.zeros(0)
+    if full_audio:
+        wav_path = os.path.join(audio_dir, f"{basename}.wav")
+        final_wav = np.concatenate(full_audio)
+        sf.write(wav_path, final_wav, sr)
 
-            dur = len(final_sentence_wav) / sr
-            start = curr_time
-            end = curr_time + dur
-
-            sync_data.append({"id": seg['id'], "start": start, "end": end})
-            full_audio.append(final_sentence_wav)
-            full_audio.append(np.zeros(int(0.15 * sr)))
-            curr_time = end + 0.15
-
-        if full_audio:
-            wav_path = os.path.join(audio_dir, f"{basename}.wav")
-            final_wav = np.concatenate(full_audio)
-            sf.write(wav_path, final_wav, sr)
-
-            subprocess.run(["ffmpeg", "-i", wav_path, "-b:a", "128k", "-y", mp3_path, "-loglevel", "error"], check=True)
-            os.remove(wav_path)
-            total_duration = curr_time
-        else:
-            total_duration = 0
+        subprocess.run(["ffmpeg", "-i", wav_path, "-b:a", "128k", "-y", mp3_path, "-loglevel", "error"], check=True)
+        os.remove(wav_path)
+        total_duration = curr_time
     else:
-        total_duration = 10.0
-        for i, seg in enumerate(segments):
-            sync_data.append({"id": seg['id'], "start": i*5.0, "end": (i+1)*5.0})
+        total_duration = 0
 
     smil_content = create_smil_content(basename, sync_data, f"{basename}.mp3", rel_text_path)
     with open(smil_path, "w", encoding="utf-8") as f:
@@ -110,10 +82,19 @@ def parse_arguments(argv=None):
     parser.add_argument("--voice", "-v", required=True, help="Path to the reference voice sample (.wav)")
     parser.add_argument("--output", "-o", help="Path for the output .epub file")
     parser.add_argument("--language", "-l", default="en", help="Language code (default: en)")
-    parser.add_argument("--skip-audio", action="store_true", help="Skip TTS generation (for debugging layout)")
-    parser.add_argument("--gpu", action="store_true", help="Force usage of GPU if available")
+    parser.add_argument("--model", choices=MODELS, default=None,
+                        help="Chatterbox model: turbo (English only) or multilingual. "
+                             "Default: turbo for --language en, multilingual otherwise")
+    parser.add_argument("--device", default="auto", help="Torch device: auto (default), cuda, cpu")
+    parser.add_argument("--skip-audio", action="store_true",
+                        help="Debug layout without TTS: narrate with a placeholder tone, no model load")
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    try:
+        args.model = resolve_model(args.model, args.language)
+    except ValueError as e:
+        parser.error(str(e))
+    return args
 
 
 def main(argv=None):
@@ -122,7 +103,6 @@ def main(argv=None):
     INPUT_EPUB = args.input_epub
     SPEAKER_WAV = args.voice
     BOOK_LANGUAGE = args.language
-    GENERATE_AUDIO = not args.skip_audio
 
     input_basename = os.path.splitext(os.path.basename(INPUT_EPUB))[0]
     default_filename = f"{input_basename}_Narrated_Chatterbox.epub"
@@ -176,13 +156,12 @@ def main(argv=None):
     manifest = soup.manifest
     spine = soup.spine
 
-    if GENERATE_AUDIO:
-        device = check_cuda()
-        print(f"Loading Chatterbox on {device}...")
-        tts = load_chatterbox(device)
+    if args.skip_audio:
+        tts = FakeBackend()
+        print("[INFO] --skip-audio: narrating with a placeholder tone")
     else:
-        tts = None
-        print("[INFO] Skipping Audio Generation (--skip-audio used)")
+        print(f"Loading Chatterbox {args.model} on {args.device}...")
+        tts = ChatterboxBackend(args.model, BOOK_LANGUAGE, SPEAKER_WAV, args.device)
 
     manifest_additions = []
     manifest_additions.append({"id": "sync_css", "href": f"{styles_rel_prefix}/{css_name}", "media-type": "text/css"})
@@ -215,7 +194,7 @@ def main(argv=None):
 
         if not segments: continue
 
-        duration = generate_media(basename, segments, tts, SPEAKER_WAV, BOOK_LANGUAGE, audio_dir, smil_dir, rel_text_path, GENERATE_AUDIO)
+        duration = generate_media(basename, segments, tts, audio_dir, smil_dir, rel_text_path)
 
         smil_id = f"smil_{basename}"
         audio_id = f"audio_{basename}"
