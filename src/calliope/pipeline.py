@@ -2,9 +2,12 @@
 
 Phases:
   1. extract the input into <work>/build and wrap every sentence in a <span id>;
-  2. make sure every sentence has a clip in the cache, synthesizing only the missing ones
-     (the TTS model is loaded only if something is missing);
-  3. assemble chapter audio, SMIL and OPF from the cached clips and package the EPUB.
+  2. make sure every sentence has an accepted clip in the cache, synthesizing only what is
+     missing (the TTS model is loaded only if something is missing). Each clip is checked
+     (calliope.qa) and retried with a new seed up to max_retries times; if no attempt passes,
+     the best one is kept and flagged;
+  3. optionally transcribe clips with Whisper and flag high error rates;
+  4. assemble chapter audio, SMIL and OPF from the cached clips and package the EPUB.
 Phase 3 always reads clips back from the cache, so a fresh run and a resumed run build the
 EPUB from identical audio and produce identical bytes.
 """
@@ -13,9 +16,10 @@ import os
 import shutil
 import time
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import metadata
 
+import numpy as np
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
@@ -36,6 +40,7 @@ from calliope.epub import (
     zip_dir,
 )
 from calliope.files import atomic_write_text
+from calliope.qa import QAConfig, error_rate, evaluate
 from calliope.tts import CHUNK_CHAR_LIMIT, CROSSFADE_MS, synthesize_sentence
 
 CSS_NAME = "sync_highlight.css"
@@ -50,6 +55,11 @@ class Options:
     model: str  # "turbo", "multilingual" or "fake"
     work_dir: str
     seed: int = 0
+    max_retries: int = 2
+    qa: QAConfig = field(default_factory=QAConfig)
+    wer_threshold: float = 0.3
+    # Test hook: sentence index -> number of leading attempts replaced by silence (None = all).
+    force_silence: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -121,9 +131,75 @@ def _prepare_book(opts, build_dir):
     return opf_path, oebps_dir, f"{styles_rel_prefix}/{CSS_NAME}" if styles_rel_prefix else CSS_NAME, chapters
 
 
-def run(opts, make_backend, log=print):
-    """Narrate opts.input into opts.output. make_backend() is called at most once, and only
-    when some sentence is not cached yet. Returns run statistics."""
+def _forced_silent(opts, index, attempt):
+    if index not in opts.force_silence:
+        return False
+    limit = opts.force_silence[index]
+    return limit is None or attempt < limit
+
+
+def _synthesize_clip(backend, s, cache, opts):
+    """Run attempts for one sentence until one passes QA or the retry budget is spent, continuing
+    after any attempts already cached. Stores the best attempt. Returns (QAResult, total
+    attempts, attempts made now)."""
+    best = None  # (badness, attempt, flac bytes, result)
+    first = 0
+    cached = cache.load(s.key)
+    if cached is not None:
+        wav, sr, meta = cached
+        result = evaluate(wav, sr, s.text, opts.qa)
+        best = (result.badness, meta["best_attempt"], cache.encode(wav, sr)[0], result)
+        first = meta["attempts"]
+
+    last_error = None
+    attempt = first
+    for attempt in range(first, opts.max_retries + 1):
+        try:
+            wav = synthesize_sentence(backend, s.text, attempt_seed(s.key, attempt))
+        except Exception as e:  # a failed attempt is retried like a rejected one
+            last_error = e
+            continue
+        if _forced_silent(opts, s.index, attempt):
+            wav = np.zeros_like(wav)
+        data, stored_wav = cache.encode(wav, backend.sr)
+        result = evaluate(stored_wav, backend.sr, s.text, opts.qa)
+        if best is None or result.badness < best[0]:
+            best = (result.badness, attempt, data, result)
+        if result.passed:
+            break
+    if best is None:
+        raise RuntimeError(f"synthesis failed for sentence {s.index} ({s.text_id}): {last_error}")
+
+    attempts = attempt + 1
+    _badness, best_attempt, data, result = best
+    cache.store(s.key, data, {"text": s.text, "attempts": attempts, "best_attempt": best_attempt})
+    return result, attempts, attempts - first
+
+
+def _transcribe_clips(unique, qa, cache, transcriber_factory, lang):
+    """Return key -> (error rate, transcript) for every clip, transcribing uncached ones."""
+    transcriber = None  # loaded only if some transcript is not cached
+    name = transcriber_factory.name
+    out = {}
+    for key, s in tqdm(unique.items(), desc="Whisper", unit="sentence"):
+        attempts = qa[key][1]
+        text = cache.load_transcript(key, name, attempts)
+        if text is None:
+            if transcriber is None:
+                transcriber = transcriber_factory()
+            wav, sr, _meta = cache.load(key)
+            text = transcriber.transcribe(wav, sr)
+            cache.store_transcript(key, name, attempts, text)
+        out[key] = (error_rate(s.text, text, lang), text)
+    return out
+
+
+def run(opts, make_backend, transcriber_factory=None, log=print):
+    """Narrate opts.input into opts.output.
+
+    make_backend() is called at most once, and only when some clip still needs synthesis.
+    transcriber_factory, if given, enables the Whisper check: it must have a `name` attribute
+    and return an object with transcribe(wav, sr). Returns run statistics."""
     started = time.monotonic()
     cache = ClipCache(opts.work_dir)
     build_dir = os.path.join(opts.work_dir, "build")
@@ -142,18 +218,53 @@ def run(opts, make_backend, log=print):
     unique = {}
     for s in sentences:
         unique.setdefault(s.key, s)
-    missing = [s for key, s in unique.items() if not cache.has(key)]
-    log(f"{len(sentences)} sentences in {len(chapters)} chapters; "
-        f"{len(unique) - len(missing)} clips cached, {len(missing)} to synthesize")
 
-    synth_seconds = 0.0
-    if missing:
+    qa = {}  # key -> (QAResult, attempts)
+    todo = []
+    for key, s in unique.items():
+        cached = cache.load(key)
+        if cached is None:
+            todo.append(s)
+            continue
+        wav, sr, meta = cached
+        result = evaluate(wav, sr, s.text, opts.qa)
+        qa[key] = (result, meta["attempts"])
+        if not result.passed and meta["attempts"] < opts.max_retries + 1:
+            todo.append(s)  # a higher --max-retries allows more attempts on a flagged clip
+    log(f"{len(sentences)} sentences in {len(chapters)} chapters; "
+        f"{len(unique) - len(todo)} clips done, {len(todo)} to synthesize")
+
+    synth_seconds, attempts_this_run = 0.0, 0
+    if todo:
         backend = make_backend()
         t0 = time.monotonic()
-        for s in tqdm(missing, desc="TTS", unit="sentence"):
-            wav = synthesize_sentence(backend, s.text, attempt_seed(s.key, 0))
-            cache.store(s.key, wav, backend.sr, {"text": s.text, "attempts": 1})
+        for s in tqdm(todo, desc="TTS", unit="sentence"):
+            result, attempts, made = _synthesize_clip(backend, s, cache, opts)
+            qa[s.key] = (result, attempts)
+            attempts_this_run += made
         synth_seconds = time.monotonic() - t0
+
+    wer = {}
+    if transcriber_factory is not None:
+        wer = _transcribe_clips(unique, qa, cache, transcriber_factory, opts.lang)
+
+    flagged = []
+    for s in sentences:
+        result, attempts = qa[s.key]
+        entry_wer = wer.get(s.key)
+        high_wer = entry_wer is not None and entry_wer[0] > opts.wer_threshold
+        if result.passed and not high_wer:
+            continue
+        reasons = list(result.reasons) + (["high_wer"] if high_wer else [])
+        flagged.append({
+            "index": s.index, "chapter": s.chapter, "id": s.text_id, "text": s.text,
+            "reasons": reasons, "attempts": attempts, "duration": result.duration,
+            "expected_duration": result.expected, "silence_fraction": result.silence_fraction,
+            "wer": None if entry_wer is None else round(entry_wer[0], 3),
+            "transcript": None if entry_wer is None else entry_wer[1],
+        })
+    if flagged:
+        log(f"{len(flagged)} sentences flagged by quality checks")
 
     log("--- Assembling audio and overlays ---")
     audio_dir = os.path.join(oebps_dir, "Audio")
@@ -196,8 +307,11 @@ def run(opts, make_backend, log=print):
         "chapters": len(chapters),
         "sentences": len(sentences),
         "unique_clips": len(unique),
-        "synthesized": len(missing),
-        "cached": len(unique) - len(missing),
+        "synthesized": len(todo),
+        "cached": len(unique) - len(todo),
+        "attempts_this_run": attempts_this_run,
+        "retries": sum(attempts - 1 for _result, attempts in qa.values()),
+        "flagged": flagged,
         "audio_seconds": sum(durations_ms.values()) / 1000.0,
         "synthesis_seconds": synth_seconds,
         "wall_seconds": time.monotonic() - started,

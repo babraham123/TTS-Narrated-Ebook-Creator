@@ -28,6 +28,12 @@ tts = [
     "torch==2.6.0",
     "torchaudio==2.6.0",
 ]
+# Optional --whisper-check. CTranslate2 4.6.2 is the last release built against CUDA 12.4 and
+# cuDNN 9.1 (4.6.3+ target CUDA 12.8), matching torch 2.6.0+cu124.
+whisper = [
+    "faster-whisper==1.2.1",
+    "ctranslate2==4.6.2",
+]
 
 [project.scripts]
 calliope = "calliope.cli:main"

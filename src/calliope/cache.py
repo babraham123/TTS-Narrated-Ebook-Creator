@@ -8,12 +8,13 @@ any point leaves only complete entries (or none) behind.
 """
 
 import hashlib
+import io
 import json
 import os
 
 import soundfile as sf
 
-from calliope.files import atomic_output, atomic_write_text
+from calliope.files import atomic_write_bytes, atomic_write_text
 
 CACHE_VERSION = 1
 
@@ -63,11 +64,36 @@ class ClipCache:
             return None
         return wav, sr, meta
 
-    def store(self, key, wav, sr, meta):
+    @staticmethod
+    def encode(wav, sr):
+        """Encode a clip the way it is stored. Returns (flac_bytes, wav as it will load back),
+        so quality checks see exactly the audio a later run will read from the cache."""
+        buf = io.BytesIO()
+        sf.write(buf, wav, sr, format="FLAC", subtype="PCM_16")
+        data = buf.getvalue()
+        decoded, _sr = sf.read(io.BytesIO(data), dtype="float32")
+        return data, decoded
+
+    def store(self, key, flac_bytes, meta):
         base = self._base(key)
-        with atomic_output(base + ".flac") as tmp:
-            sf.write(tmp, wav, sr, format="FLAC", subtype="PCM_16")
+        atomic_write_bytes(base + ".flac", flac_bytes)
         atomic_write_text(base + ".json", json.dumps(meta, sort_keys=True, ensure_ascii=False, indent=1))
+
+    def _transcript_path(self, key, transcriber_name):
+        return self._base(key) + f".{_digest(transcriber_name)[:12]}.transcript.json"
+
+    def load_transcript(self, key, transcriber_name, attempts):
+        """Cached transcript of the clip, if made by this transcriber for this clip version."""
+        try:
+            with open(self._transcript_path(key, transcriber_name), encoding="utf-8") as f:
+                entry = json.load(f)
+        except (OSError, ValueError):
+            return None
+        return entry["text"] if entry.get("attempts") == attempts else None
+
+    def store_transcript(self, key, transcriber_name, attempts, text):
+        entry = {"transcriber": transcriber_name, "attempts": attempts, "text": text}
+        atomic_write_text(self._transcript_path(key, transcriber_name), json.dumps(entry, ensure_ascii=False))
 
     def chapter_path(self, clip_keys, encoding):
         """Location of the encoded MP3 for a chapter made of these clips, in this order."""
