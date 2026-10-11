@@ -27,6 +27,9 @@ tts = [
     "chatterbox-tts==0.1.7",
     "torch==2.6.0",
     "torchaudio==2.6.0",
+    # resemble-perth (Chatterbox's watermarker) imports pkg_resources, which setuptools 82
+    # removed; without it PerthImplicitWatermarker is None and model loading fails.
+    "setuptools<82",
 ]
 # Optional --whisper-check. CTranslate2 4.6.2 is the last release built against CUDA 12.4 and
 # cuDNN 9.1 (4.6.3+ target CUDA 12.8), matching torch 2.6.0+cu124.
