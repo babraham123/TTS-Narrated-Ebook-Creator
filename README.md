@@ -174,7 +174,7 @@ interrupted container can resume.
 ## How It Works
 1. **Extraction:** the EPUB is extracted afresh into the work directory, and the OPF and spine are parsed.
 2. **Injection:** in every XHTML chapter, text blocks are split into sentences (punkt for the book language). Each sentence is wrapped in a `<span id>` without disturbing the surrounding HTML/CSS.
-3. **Synthesis:** uncached sentences are sent to the local model. Long sentences are split at punctuation, synthesized in chunks and crossfaded. Each clip is checked, retried if needed, and cached.
+3. **Synthesis:** the text sent to the model has `%`, `°`/`°C`/`°F`, `$ € £ ¥`, `&` and `#1` spelled out in the book's language (da, de, en, es, fr, it, nl, no, pt, sv; other languages drop them), and other symbols removed. Uncached sentences are sent to the local model. Long sentences are split at punctuation, synthesized in chunks and crossfaded. Each clip is checked, retried if needed, and cached.
 4. **Alignment:** the chapter audio is the cached clips plus 150 ms gaps, so SMIL clip times come from exact sample counts. Each clip runs until the next one begins, so highlighting is continuous.
 5. **Packaging:** one MP3 per chapter, SMIL overlays, `media:duration` (per overlay and total) and `media:active-class` metadata with a matching CSS rule. The EPUB is written reproducibly: `mimetype` first and stored, sorted entries, fixed timestamps.
 

@@ -13,6 +13,7 @@ import numpy as np
 from bs4 import BeautifulSoup, CData, NavigableString, Tag
 
 from calliope.files import atomic_output, atomic_write_text
+from calliope.normalize import normalize_symbols
 
 
 # -------------------------------------------------------------------------
@@ -108,11 +109,12 @@ def split_sentences(text, lang="en"):
     return nltk.sent_tokenize(text, language=PUNKT_LANGUAGES.get(lang, "english"))
 
 
-def clean_text_for_tts(text):
+def clean_text_for_tts(text, lang="en"):
     """
     Cleans text for TTS only. Visual text remains untouched.
     """
     text = unicodedata.normalize('NFKC', text)
+    text = normalize_symbols(text, lang)
     text = re.sub(r'\.\s\.\s\.', '...', text)
     text = re.sub(r'\s*—\s*', ', ', text).replace('–', '-').replace('_', ' ')
     text = _APOSTROPHE.sub(_APOSTROPHE_PLACEHOLDER, text)
@@ -197,7 +199,7 @@ def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
             nonlocal current_id
             seg_id = f"f{current_id:06d}"
             current_id += 1
-            segments.append({"id": seg_id, "text": clean_text_for_tts(sentences_clean[current_sent_idx])})
+            segments.append({"id": seg_id, "text": clean_text_for_tts(sentences_clean[current_sent_idx], lang)})
             parts.append(f'<span id="{seg_id}">')
             for t_name, t_attrs in open_tags:
                 parts.append(_open_tag(t_name, t_attrs))
