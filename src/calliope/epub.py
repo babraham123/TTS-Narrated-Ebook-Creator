@@ -13,7 +13,7 @@ import numpy as np
 from bs4 import BeautifulSoup, CData, NavigableString, Tag
 
 from calliope.files import atomic_output, atomic_write_text
-from calliope.normalize import normalize_symbols
+from calliope.normalize import GROUP_MARK, normalize_symbols
 
 
 # -------------------------------------------------------------------------
@@ -82,6 +82,9 @@ _QUOTES = re.compile(
     r"\N{LEFT-POINTING DOUBLE ANGLE QUOTATION MARK}\N{RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK}]"
 )
 # Letters and digits of every script survive; CJK sentence punctuation is kept for prosody.
+# A no-break or thin space between digit groups ("12\N{NO-BREAK SPACE}345") is a thousands
+# separator; NFKC would fold it into an ordinary space.
+_DIGIT_GROUP_SPACE = re.compile(r"(?<=\d)[\N{NO-BREAK SPACE}\N{NARROW NO-BREAK SPACE}\N{THIN SPACE}](?=\d{3}(?!\d))")
 _DISALLOWED = re.compile(r"[^\w\s.,?!;:'\-\N{IDEOGRAPHIC FULL STOP}\N{IDEOGRAPHIC COMMA}]")
 _APOSTROPHE_PLACEHOLDER = chr(0xE000)  # private-use character, never present in book text
 
@@ -113,8 +116,9 @@ def clean_text_for_tts(text, lang="en"):
     """
     Cleans text for TTS only. Visual text remains untouched.
     """
+    text = _DIGIT_GROUP_SPACE.sub(GROUP_MARK, text)
     text = unicodedata.normalize('NFKC', text)
-    text = normalize_symbols(text, lang)
+    text = normalize_symbols(text, lang).replace(GROUP_MARK, ' ')
     text = re.sub(r'\.\s\.\s\.', '...', text)
     text = re.sub(r'\s*—\s*', ', ', text).replace('–', '-').replace('_', ' ')
     text = _APOSTROPHE.sub(_APOSTROPHE_PLACEHOLDER, text)

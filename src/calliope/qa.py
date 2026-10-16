@@ -14,16 +14,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from calliope.normalize import normalize_symbols
+
 # Speaking rate in characters per second used to predict a clip's duration.
 DEFAULT_CHARS_PER_SECOND = 14.0
 CHARS_PER_SECOND_BY_LANG = {"zh": 4.5, "ja": 7.0, "ko": 7.0}
 CHARACTER_LEVEL_LANGS = {"zh", "ja"}
-# Whisper writes small numbers as digits ("Chapter One" -> "Chapter 1."); compare them as digits.
-_EN_NUMBER_WORDS = {
-    word: str(value) for value, word in enumerate(
-        "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
-        "fifteen sixteen seventeen eighteen nineteen twenty".split())
-}
 
 
 @dataclass
@@ -90,14 +86,13 @@ def evaluate(wav, sr, text, cfg):
 # Whisper transcription check
 # -------------------------------------------------------------------------
 def _tokens(text, lang):
-    text = unicodedata.normalize("NFKC", text).lower()
+    # Whisper writes numbers as digits ("Chapter 1."); spell them out the way the
+    # reference was, so "1" and "one" compare equal.
+    text = normalize_symbols(unicodedata.normalize("NFKC", text), lang).lower()
     text = re.sub(r"[^\w\s']", " ", text).replace("'", "")
     if lang in CHARACTER_LEVEL_LANGS:
         return [c for c in text if not c.isspace()]
-    tokens = text.split()
-    if lang == "en":
-        tokens = [_EN_NUMBER_WORDS.get(t, t) for t in tokens]
-    return tokens
+    return text.split()
 
 
 def error_rate(reference, hypothesis, lang="en"):
