@@ -36,6 +36,9 @@ RUN uv sync --frozen --no-dev --extra tts --extra whisper --no-editable \
     && python3 -c "import nltk; nltk.download('punkt_tab', download_dir='/usr/share/nltk_data', quiet=True)" \
     && calliope --help > /dev/null
 
+# The batch runner: one book from an inbox per run, as an alternative entrypoint.
+COPY batch/calliope_batch.py /opt/
+
 # Model weights (Chatterbox, faster-whisper) download to $HF_HOME on first use: mount /cache.
 VOLUME ["/cache"]
 WORKDIR /books

@@ -155,6 +155,47 @@ podman run --rm --gpus=all -v calliope-cache:/cache -v ./books:/books calliope \
 `--device nvidia.com/gpu=all` instead. Keep `--work-dir` on a mounted volume so an
 interrupted container can resume.
 
+### Batch runner
+`batch/calliope_batch.py`, in the image as `/opt/calliope_batch.py`, works through an inbox one
+book per run: it narrates the oldest EPUB, delivers the narrated EPUB and its report, and posts
+the outcome to ntfy. Run it as the container's entrypoint and start it again (a systemd path
+unit on the inbox and a timer, say) until the inbox is empty.
+
+```bash
+podman run --rm --gpus=all -v calliope-cache:/cache -v ./narrate:/narrate \
+    -v ./readalouds:/readalouds -v ./voices:/voices:ro \
+    --entrypoint python3 calliope /opt/calliope_batch.py
+```
+
+A book is `Title.epub` in `inbox/`, with an optional sidecar `Title.json`:
+
+| Field | Default | |
+|-------|---------|---|
+| `lang` | `en` | ISO 639 code, passed to `--lang` |
+| `voice` | `default` | `<voice>.wav` in the voices directory, passed to `--voice` |
+| `collection` | `books` | the directory under the readalouds directory to deliver to |
+
+`voice` and `collection` are letters, digits, `_` and `-` only. A run:
+
+* narrates the book with `work/Title/cache` as its `--work-dir` and delivers
+  `Title.readaloud.epub` and `Title.readaloud.report.json` to `<collection>/Title/` under the
+  readalouds directory, the report first, so a reader importing the directory never sees the
+  EPUB alone;
+* on an invalid sidecar or a failed `calliope`, moves the book, its sidecar and any output to
+  `failed/` (`failed/Title/` once `calliope` has run);
+* on SIGTERM or Ctrl-C, stops `calliope` and leaves the book in the inbox, and the next run
+  resumes it from the sentence cache.
+
+It exits 0 when the book is done or the inbox is empty, 1 when the book failed.
+
+| Variable | Default | |
+|----------|---------|---|
+| `NARRATE_DIR` | `/narrate` | holds `inbox/`, `work/` and `failed/` |
+| `READALOUDS_DIR` | `/readalouds` | delivers to `<collection>/Title/` under it |
+| `VOICES_DIR` | `/voices` | the reference voice samples |
+| `READALOUDS_OWNER` | `0:0` | `UID:GID` the delivered files and their directories belong to |
+| `NTFY_URL`, `NTFY_ALERT_ACCESS_TOKEN` | unset | the ntfy topic URL and bearer token; no post without both |
+
 ### Running on a Tesla P4 (Pascal, sm_61)
 * **Why CUDA 12.4 and torch 2.6.0:** `torch==2.6.0` is the version `chatterbox-tts` 0.1.7 pins,
   and its `cu124` wheels are built for `sm_50;sm_60;sm_70;sm_75;sm_80;sm_86;sm_90`. The
