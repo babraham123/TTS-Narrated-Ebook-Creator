@@ -40,19 +40,9 @@ with `torch==2.6.0` / `torchaudio==2.6.0`, which on Linux x86_64 come from the C
 (`cu124`) PyTorch index.
 
 ```bash
-# With uv (recommended): creates .venv from the lock file
 uv sync --extra tts                    # add --extra whisper for --whisper-check
 uv run calliope --help
-
-# With pip: the same pins exported from uv.lock, hashes included
-python3.12 -m venv env_chat
-source env_chat/bin/activate
-pip install -r requirements/requirements_chatterbox.txt
-pip install --no-deps -e .
 ```
-
-`requirements/requirements_chatterbox.txt` is generated; after changing dependencies, run
-`uv lock` and re-export it with the command shown in its header.
 
 The lock covers Linux x86_64 (CUDA 12.4 wheels) and Apple Silicon macOS (PyPI wheels, CPU/MPS).
 
