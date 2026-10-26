@@ -47,8 +47,14 @@ def test_rerun_does_not_load_the_model(run_cli, tmp_path, book, voice):
     def no_backend():
         raise AssertionError("model loaded although every clip is cached")
 
-    opts = Options(input=book, output=str(tmp_path / "again.epub"), voice=voice, lang="en",
-                   model="fake", work_dir=str(tmp_path / "work"))
+    opts = Options(
+        input=book,
+        output=str(tmp_path / "again.epub"),
+        voice=voice,
+        lang="en",
+        model="fake",
+        work_dir=str(tmp_path / "work"),
+    )
     stats = run(opts, no_backend, log=lambda *_: None)
     assert stats["synthesized"] == 0
     assert (tmp_path / "again.epub").read_bytes() == (tmp_path / "first.epub").read_bytes()
@@ -80,9 +86,14 @@ def test_package_structure(run_cli):
     per_overlay = {m["refines"].lstrip("#"): clock_ms(m.string) for m in metas if m.get("refines")}
     assert len(total) == 1
     assert clock_ms(total[0].string) == sum(per_overlay.values())
-    assert opf.metadata.find("meta", property="media:active-class").string == "-epub-media-overlay-active"
+    assert (
+        opf.metadata.find("meta", property="media:active-class").string
+        == "-epub-media-overlay-active"
+    )
 
-    overlay_items = {i["id"]: i for i in opf.manifest.find_all("item", attrs={"media-overlay": True})}
+    overlay_items = {
+        i["id"]: i for i in opf.manifest.find_all("item", attrs={"media-overlay": True})
+    }
     assert len(overlay_items) == EXPECTED_CHAPTERS
     assert set(per_overlay) == {i["media-overlay"] for i in overlay_items.values()}
     audio_items = opf.manifest.find_all("item", attrs={"media-type": "audio/mpeg"})
@@ -130,14 +141,28 @@ def test_audio_duration_matches_overlay(run_cli):
         pytest.skip("ffprobe not installed")
     result = run_cli()
     opf = BeautifulSoup(result.read("OEBPS/content.opf"), "xml")
-    expected = {m["refines"]: clock_ms(m.string)
-                for m in opf.metadata.find_all("meta", property="media:duration") if m.get("refines")}
+    expected = {
+        m["refines"]: clock_ms(m.string)
+        for m in opf.metadata.find_all("meta", property="media:duration")
+        if m.get("refines")
+    }
     with zipfile.ZipFile(result.epub) as z:
         z.extract("OEBPS/Audio/ch1.mp3", result.epub.parent / "x")
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
-         str(result.epub.parent / "x/OEBPS/Audio/ch1.mp3")],
-        capture_output=True, text=True, check=True)
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            str(result.epub.parent / "x/OEBPS/Audio/ch1.mp3"),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert abs(float(probe.stdout) * 1000 - expected["#smil_ch1"]) < 60
 
 
@@ -154,10 +179,13 @@ def test_report_contents(run_cli):
     assert report["flagged"] == [] and report["flagged_count"] == 0
 
     opf = BeautifulSoup(result.read("OEBPS/content.opf"), "xml")
-    total = next(m for m in opf.metadata.find_all("meta", property="media:duration") if not m.get("refines"))
+    total = next(
+        m for m in opf.metadata.find_all("meta", property="media:duration") if not m.get("refines")
+    )
     assert report["audio_seconds"] == pytest.approx(clock_ms(total.string) / 1000, abs=0.001)
     assert report["real_time_factor"] == pytest.approx(
-        report["wall_seconds"] / report["audio_seconds"], rel=0.01, abs=1e-4)
+        report["wall_seconds"] / report["audio_seconds"], rel=0.01, abs=1e-4
+    )
     assert "wall_seconds / audio_seconds" in report["real_time_factor_definition"]
 
 
@@ -196,7 +224,9 @@ def _wait_for(predicate, timeout):
 
 
 @pytest.mark.parametrize("kill_after_clips", [1, 4])
-def test_sigterm_leaves_a_valid_cache_and_resume_matches_clean_run(run_cli, tmp_path, kill_after_clips):
+def test_sigterm_leaves_a_valid_cache_and_resume_matches_clean_run(
+    run_cli, tmp_path, kill_after_clips
+):
     work = tmp_path / "work"
     args = run_cli.args("killed.epub", work="work")
     proc = spawn_cli(args, env={"CALLIOPE_FAKE_DELAY": "0.2"})
@@ -214,7 +244,9 @@ def test_sigterm_leaves_a_valid_cache_and_resume_matches_clean_run(run_cli, tmp_
     assert not (tmp_path / "killed.epub").exists()
     killed_report = json.loads((tmp_path / "killed.report.json").read_text())
     assert killed_report["status"] == "terminated"
-    leftovers = [p for p in glob.glob(str(work / "**/*"), recursive=True) if ".tmp-" in os.path.basename(p)]
+    leftovers = [
+        p for p in glob.glob(str(work / "**/*"), recursive=True) if ".tmp-" in os.path.basename(p)
+    ]
     assert leftovers == []
     cache = ClipCache(str(work))
     keys = [os.path.basename(p)[:-5] for p in glob.glob(str(work / "clips/*/*.json"))]

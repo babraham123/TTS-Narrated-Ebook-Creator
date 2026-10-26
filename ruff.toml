@@ -1,0 +1,6 @@
+# The upstream scripts stay as upstream wrote them, so merges from it stay clean.
+extend-exclude = ["src/epub_processor_*.py"]
+line-length = 100
+
+[lint]
+select = ["E9", "F"]

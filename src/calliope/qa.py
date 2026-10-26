@@ -25,11 +25,11 @@ CHARACTER_LEVEL_LANGS = {"zh", "ja"}
 @dataclass
 class QAConfig:
     chars_per_second: float = DEFAULT_CHARS_PER_SECOND
-    min_ratio: float = 0.4        # shorter than expected * min_ratio => truncated
-    max_ratio: float = 2.5        # longer than expected * max_ratio + slack => rambling
-    slack_seconds: float = 1.0    # absorbs fixed lead-in/out silence on very short sentences
-    silence_db: float = -40.0     # frame RMS below this (dBFS) counts as silent
-    max_silence: float = 0.6      # more silent frames than this share => mostly silence
+    min_ratio: float = 0.4  # shorter than expected * min_ratio => truncated
+    max_ratio: float = 2.5  # longer than expected * max_ratio + slack => rambling
+    slack_seconds: float = 1.0  # absorbs fixed lead-in/out silence on very short sentences
+    silence_db: float = -40.0  # frame RMS below this (dBFS) counts as silent
+    max_silence: float = 0.6  # more silent frames than this share => mostly silence
 
     @classmethod
     def for_language(cls, lang, **overrides):
@@ -57,7 +57,7 @@ def silence_fraction(wav, sr, threshold_db, frame_seconds=0.02):
     if n == 0:
         return 1.0
     frames = np.asarray(wav[: n * frame], dtype=np.float64).reshape(n, frame)
-    rms = np.sqrt(np.mean(frames ** 2, axis=1))
+    rms = np.sqrt(np.mean(frames**2, axis=1))
     db = 20.0 * np.log10(rms + 1e-12)
     return float(np.mean(db < threshold_db))
 
@@ -126,7 +126,10 @@ class WhisperTranscriber:
             n = int(round(len(wav) * self.SAMPLE_RATE / sr))
             wav = np.interp(np.linspace(0, len(wav) - 1, n), np.arange(len(wav)), wav)
         segments, _info = self.model.transcribe(
-            np.asarray(wav, dtype=np.float32), language=self.lang, beam_size=1,
-            condition_on_previous_text=False, vad_filter=False,
+            np.asarray(wav, dtype=np.float32),
+            language=self.lang,
+            beam_size=1,
+            condition_on_previous_text=False,
+            vad_filter=False,
         )
         return " ".join(seg.text.strip() for seg in segments).strip()

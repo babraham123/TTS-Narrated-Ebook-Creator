@@ -15,7 +15,7 @@ CHAPTERS = [
         "Chapter Two",
         [
             "A short one.",
-            "Here is a longer paragraph with <a href=\"ch1.xhtml\">a link</a> inside it. "
+            'Here is a longer paragraph with <a href="ch1.xhtml">a link</a> inside it. '
             "And a second sentence follows the first.",
         ],
     ),

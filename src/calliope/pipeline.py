@@ -104,7 +104,11 @@ def _prepare_book(opts, build_dir):
     global_id, index = 1, 0
     for itemref in soup.spine.find_all("itemref"):
         item = soup.manifest.find("item", id=itemref["idref"])
-        if not item or item.get("media-type") != "application/xhtml+xml" or "nav" in item.get("properties", "").split():
+        if (
+            not item
+            or item.get("media-type") != "application/xhtml+xml"
+            or "nav" in item.get("properties", "").split()
+        ):
             continue
         href = item["href"]
         full_path = os.path.join(oebps_dir, urllib.parse.unquote(href))
@@ -128,7 +132,12 @@ def _prepare_book(opts, build_dir):
         if sentences:
             chapters.append(Chapter(item["id"], name, href, sentences))
 
-    return opf_path, oebps_dir, f"{styles_rel_prefix}/{CSS_NAME}" if styles_rel_prefix else CSS_NAME, chapters
+    return (
+        opf_path,
+        oebps_dir,
+        f"{styles_rel_prefix}/{CSS_NAME}" if styles_rel_prefix else CSS_NAME,
+        chapters,
+    )
 
 
 def _forced_silent(opts, index, attempt):
@@ -231,8 +240,10 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
         qa[key] = (result, meta["attempts"])
         if not result.passed and meta["attempts"] < opts.max_retries + 1:
             todo.append(s)  # a higher --max-retries allows more attempts on a flagged clip
-    log(f"{len(sentences)} sentences in {len(chapters)} chapters; "
-        f"{len(unique) - len(todo)} clips done, {len(todo)} to synthesize")
+    log(
+        f"{len(sentences)} sentences in {len(chapters)} chapters; "
+        f"{len(unique) - len(todo)} clips done, {len(todo)} to synthesize"
+    )
 
     synth_seconds, synth_audio_seconds, attempts_this_run = 0.0, 0.0, 0
     if todo:
@@ -257,13 +268,21 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
         if result.passed and not high_wer:
             continue
         reasons = list(result.reasons) + (["high_wer"] if high_wer else [])
-        flagged.append({
-            "index": s.index, "chapter": s.chapter, "id": s.text_id, "text": s.text,
-            "reasons": reasons, "attempts": attempts, "duration": result.duration,
-            "expected_duration": result.expected, "silence_fraction": result.silence_fraction,
-            "wer": None if entry_wer is None else round(entry_wer[0], 3),
-            "transcript": None if entry_wer is None else entry_wer[1],
-        })
+        flagged.append(
+            {
+                "index": s.index,
+                "chapter": s.chapter,
+                "id": s.text_id,
+                "text": s.text,
+                "reasons": reasons,
+                "attempts": attempts,
+                "duration": result.duration,
+                "expected_duration": result.expected,
+                "silence_fraction": result.silence_fraction,
+                "wer": None if entry_wer is None else round(entry_wer[0], 3),
+                "transcript": None if entry_wer is None else entry_wer[1],
+            }
+        )
     if flagged:
         log(f"{len(flagged)} sentences flagged by quality checks")
 
@@ -289,12 +308,18 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
             encode_mp3(audio, sr, cached_mp3)
         shutil.copyfile(cached_mp3, os.path.join(audio_dir, f"{ch.name}.mp3"))
 
-        smil = create_smil_content(f"{ch.name}_seq", clips, f"../Audio/{ch.name}.mp3", f"../{ch.href}")
+        smil = create_smil_content(
+            f"{ch.name}_seq", clips, f"../Audio/{ch.name}.mp3", f"../{ch.href}"
+        )
         atomic_write_text(os.path.join(smil_dir, f"{ch.name}.smil"), smil)
 
         smil_id = f"smil_{ch.name}"
-        manifest_additions.append({"id": smil_id, "href": f"Smil/{ch.name}.smil", "media-type": "application/smil+xml"})
-        manifest_additions.append({"id": f"audio_{ch.name}", "href": f"Audio/{ch.name}.mp3", "media-type": "audio/mpeg"})
+        manifest_additions.append(
+            {"id": smil_id, "href": f"Smil/{ch.name}.smil", "media-type": "application/smil+xml"}
+        )
+        manifest_additions.append(
+            {"id": f"audio_{ch.name}", "href": f"Audio/{ch.name}.mp3", "media-type": "audio/mpeg"}
+        )
         spine_mapping[ch.item_id] = smil_id
         durations_ms[smil_id] = duration_ms
 

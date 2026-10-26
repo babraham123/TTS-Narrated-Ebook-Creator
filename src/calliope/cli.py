@@ -46,34 +46,76 @@ def build_parser():
     )
     parser.add_argument("input", help="input .epub")
     parser.add_argument("output", help="output .epub")
-    parser.add_argument("--voice", "-v", required=True, help="reference voice sample (WAV, longer than 5 s)")
-    parser.add_argument("--lang", "--language", "-l", dest="lang", default="en",
-                        help="book language code (default: en)")
-    parser.add_argument("--model", choices=MODELS, default=None,
-                        help="Chatterbox model; default: turbo for --lang en, multilingual otherwise "
-                             "(turbo is English-only)")
-    parser.add_argument("--work-dir", default=None,
-                        help="sentence cache and scratch space; rerunning with the same work dir resumes "
-                             "(default: .<OUT stem>.calliope-work next to OUT)")
+    parser.add_argument(
+        "--voice", "-v", required=True, help="reference voice sample (WAV, longer than 5 s)"
+    )
+    parser.add_argument(
+        "--lang",
+        "--language",
+        "-l",
+        dest="lang",
+        default="en",
+        help="book language code (default: en)",
+    )
+    parser.add_argument(
+        "--model",
+        choices=MODELS,
+        default=None,
+        help="Chatterbox model; default: turbo for --lang en, multilingual otherwise "
+        "(turbo is English-only)",
+    )
+    parser.add_argument(
+        "--work-dir",
+        default=None,
+        help="sentence cache and scratch space; rerunning with the same work dir resumes "
+        "(default: .<OUT stem>.calliope-work next to OUT)",
+    )
     parser.add_argument("--device", default="auto", help="torch device: auto (default), cuda, cpu")
     parser.add_argument("--seed", type=int, default=0, help="base random seed (default: 0)")
-    parser.add_argument("--skip-audio", action="store_true",
-                        help="debug layout without TTS: narrate with a placeholder tone, no model load")
+    parser.add_argument(
+        "--skip-audio",
+        action="store_true",
+        help="debug layout without TTS: narrate with a placeholder tone, no model load",
+    )
 
     qa = parser.add_argument_group("quality checks")
-    qa.add_argument("--max-retries", type=int, default=2,
-                    help="extra attempts (new seed each) for a clip that fails the checks (default: 2)")
-    qa.add_argument("--chars-per-second", type=float, default=None,
-                    help="speaking rate used to predict clip length (default: 14; zh 4.5, ja/ko 7)")
-    qa.add_argument("--max-silence", type=float, default=None,
-                    help="reject clips whose share of silent frames exceeds this (default: 0.6)")
-    qa.add_argument("--whisper-check", action="store_true",
-                    help="transcribe every clip with faster-whisper and flag high error rates")
-    qa.add_argument("--whisper-model", default="small", help="faster-whisper model size (default: small)")
-    qa.add_argument("--whisper-compute-type", default="int8",
-                    help="CTranslate2 compute type (default: int8, which Pascal GPUs support)")
-    qa.add_argument("--wer-threshold", type=float, default=0.3,
-                    help="flag clips whose word error rate exceeds this (default: 0.3)")
+    qa.add_argument(
+        "--max-retries",
+        type=int,
+        default=2,
+        help="extra attempts (new seed each) for a clip that fails the checks (default: 2)",
+    )
+    qa.add_argument(
+        "--chars-per-second",
+        type=float,
+        default=None,
+        help="speaking rate used to predict clip length (default: 14; zh 4.5, ja/ko 7)",
+    )
+    qa.add_argument(
+        "--max-silence",
+        type=float,
+        default=None,
+        help="reject clips whose share of silent frames exceeds this (default: 0.6)",
+    )
+    qa.add_argument(
+        "--whisper-check",
+        action="store_true",
+        help="transcribe every clip with faster-whisper and flag high error rates",
+    )
+    qa.add_argument(
+        "--whisper-model", default="small", help="faster-whisper model size (default: small)"
+    )
+    qa.add_argument(
+        "--whisper-compute-type",
+        default="int8",
+        help="CTranslate2 compute type (default: int8, which Pascal GPUs support)",
+    )
+    qa.add_argument(
+        "--wer-threshold",
+        type=float,
+        default=0.3,
+        help="flag clips whose word error rate exceeds this (default: 0.3)",
+    )
     return parser
 
 
@@ -127,7 +169,9 @@ class WhisperFactory:
     def __call__(self):
         print(f"Loading faster-whisper {self.args.whisper_model}...")
         device = "auto" if self.args.device == "auto" else self.args.device.split(":")[0]
-        return WhisperTranscriber(self.args.whisper_model, self.args.lang, device, self.args.whisper_compute_type)
+        return WhisperTranscriber(
+            self.args.whisper_model, self.args.lang, device, self.args.whisper_compute_type
+        )
 
 
 def report_path(output):
@@ -135,9 +179,11 @@ def report_path(output):
     return os.path.splitext(output)[0] + ".report.json"
 
 
-RTF_DEFINITION = ("real_time_factor = wall_seconds / audio_seconds (whole run); "
-                  "synthesis_real_time_factor = synthesis_seconds / synthesized_audio_seconds "
-                  "(TTS only, this run). Below 1 is faster than real time.")
+RTF_DEFINITION = (
+    "real_time_factor = wall_seconds / audio_seconds (whole run); "
+    "synthesis_real_time_factor = synthesis_seconds / synthesized_audio_seconds "
+    "(TTS only, this run). Below 1 is faster than real time."
+)
 
 
 def build_report(args, opts, status, wall_seconds, stats=None, error=None):
@@ -167,24 +213,27 @@ def build_report(args, opts, status, wall_seconds, stats=None, error=None):
 
     audio = stats["audio_seconds"]
     synth_audio = stats["synthesized_audio_seconds"]
-    report.update({
-        "chapters": stats["chapters"],
-        "sentences": stats["sentences"],
-        "unique_clips": stats["unique_clips"],
-        "synthesized": stats["synthesized"],
-        "cached": stats["cached"],
-        "attempts_this_run": stats["attempts_this_run"],
-        "retries": stats["retries"],
-        "flagged_count": len(stats["flagged"]),
-        "flagged": stats["flagged"],
-        "audio_seconds": round(audio, 3),
-        "synthesis_seconds": round(stats["synthesis_seconds"], 3),
-        "synthesized_audio_seconds": round(synth_audio, 3),
-        "real_time_factor": round(wall_seconds / audio, 4) if audio else None,
-        "synthesis_real_time_factor": (round(stats["synthesis_seconds"] / synth_audio, 4)
-                                       if synth_audio else None),
-        "real_time_factor_definition": RTF_DEFINITION,
-    })
+    report.update(
+        {
+            "chapters": stats["chapters"],
+            "sentences": stats["sentences"],
+            "unique_clips": stats["unique_clips"],
+            "synthesized": stats["synthesized"],
+            "cached": stats["cached"],
+            "attempts_this_run": stats["attempts_this_run"],
+            "retries": stats["retries"],
+            "flagged_count": len(stats["flagged"]),
+            "flagged": stats["flagged"],
+            "audio_seconds": round(audio, 3),
+            "synthesis_seconds": round(stats["synthesis_seconds"], 3),
+            "synthesized_audio_seconds": round(synth_audio, 3),
+            "real_time_factor": round(wall_seconds / audio, 4) if audio else None,
+            "synthesis_real_time_factor": (
+                round(stats["synthesis_seconds"] / synth_audio, 4) if synth_audio else None
+            ),
+            "real_time_factor_definition": RTF_DEFINITION,
+        }
+    )
     return report
 
 
@@ -206,8 +255,9 @@ def main(argv=None):
         work_dir=args.work_dir,
         seed=args.seed,
         max_retries=args.max_retries,
-        qa=QAConfig.for_language(args.lang, chars_per_second=args.chars_per_second,
-                                 max_silence=args.max_silence),
+        qa=QAConfig.for_language(
+            args.lang, chars_per_second=args.chars_per_second, max_silence=args.max_silence
+        ),
         wer_threshold=args.wer_threshold,
         force_silence=args.force_silence,
     )
@@ -220,10 +270,14 @@ def main(argv=None):
         stats = run(opts, make_backend_factory(args), whisper)
     except Terminated:
         status, code = "terminated", EXIT_SIGTERM
-        print("calliope: terminated; finished sentences are cached in the work dir", file=sys.stderr)
+        print(
+            "calliope: terminated; finished sentences are cached in the work dir", file=sys.stderr
+        )
     except KeyboardInterrupt:
         status, code = "interrupted", EXIT_SIGINT
-        print("calliope: interrupted; finished sentences are cached in the work dir", file=sys.stderr)
+        print(
+            "calliope: interrupted; finished sentences are cached in the work dir", file=sys.stderr
+        )
     except Exception as e:
         status, error, code = "failed", f"{type(e).__name__}: {e}", EXIT_FAILURE
         print(f"calliope: error: {e}", file=sys.stderr)
@@ -236,6 +290,8 @@ def main(argv=None):
         code = code or EXIT_FAILURE
 
     if stats is not None:
-        print(f"Wrote {args.output}: {stats['sentences']} sentences, {stats['synthesized']} synthesized, "
-              f"{stats['cached']} cached, {len(stats['flagged'])} flagged; report: {report_file}")
+        print(
+            f"Wrote {args.output}: {stats['sentences']} sentences, {stats['synthesized']} synthesized, "
+            f"{stats['cached']} cached, {len(stats['flagged'])} flagged; report: {report_file}"
+        )
     return code

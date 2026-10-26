@@ -30,10 +30,10 @@ def smart_split_text(text, max_chars=CHUNK_CHAR_LIMIT):
 
     # Define split priorities (Regex Pattern)
     split_patterns = [
-        r'([.?!])\s',      # 1. End of sentence
-        r'([:;])\s',       # 2. Semi-colons
-        r'([,])\s',        # 3. Commas
-        r'(\s)'            # 4. Any space (fallback)
+        r"([.?!])\s",  # 1. End of sentence
+        r"([:;])\s",  # 2. Semi-colons
+        r"([,])\s",  # 3. Commas
+        r"(\s)",  # 4. Any space (fallback)
     ]
 
     best_split_point = -1
@@ -105,7 +105,9 @@ def resolve_model(model, lang):
     if model not in MODELS:
         raise ValueError(f"unknown model {model!r}; choose from {', '.join(MODELS)}")
     if model == "turbo" and lang != "en":
-        raise ValueError(f"Chatterbox Turbo is English-only; use --model multilingual for --lang {lang}")
+        raise ValueError(
+            f"Chatterbox Turbo is English-only; use --model multilingual for --lang {lang}"
+        )
     return model
 
 
@@ -123,8 +125,10 @@ class ChatterboxBackend:
             from chatterbox.mtl_tts import ChatterboxMultilingualTTS as model_cls
 
             if lang not in SUPPORTED_LANGUAGES:
-                raise ValueError(f"Chatterbox Multilingual does not support {lang!r}; "
-                                 f"supported: {', '.join(sorted(SUPPORTED_LANGUAGES))}")
+                raise ValueError(
+                    f"Chatterbox Multilingual does not support {lang!r}; "
+                    f"supported: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+                )
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -162,6 +166,7 @@ class FakeBackend:
     def generate(self, text, seed):
         if self.delay:
             import time
+
             time.sleep(self.delay)
         rng = np.random.default_rng(seed)
         n = int(self.sr * (0.2 + len(text) / self.chars_per_second))
@@ -177,5 +182,3 @@ def synthesize_sentence(backend, text, seed):
     if len(wavs) == 1:
         return np.asarray(wavs[0], dtype=np.float32)
     return crossfade_audio_segments(wavs, sr=backend.sr)
-
-

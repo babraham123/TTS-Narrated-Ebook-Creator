@@ -33,8 +33,17 @@ def _digest(payload):
 
 
 def clip_key(book_sha, text, model_id, lang, voice_sha, settings):
-    return _digest({"v": CACHE_VERSION, "book": book_sha, "text": text, "model": model_id,
-                    "lang": lang, "voice": voice_sha, "settings": settings})
+    return _digest(
+        {
+            "v": CACHE_VERSION,
+            "book": book_sha,
+            "text": text,
+            "model": model_id,
+            "lang": lang,
+            "voice": voice_sha,
+            "settings": settings,
+        }
+    )
 
 
 def attempt_seed(key, attempt):
@@ -77,7 +86,9 @@ class ClipCache:
     def store(self, key, flac_bytes, meta):
         base = self._base(key)
         atomic_write_bytes(base + ".flac", flac_bytes)
-        atomic_write_text(base + ".json", json.dumps(meta, sort_keys=True, ensure_ascii=False, indent=1))
+        atomic_write_text(
+            base + ".json", json.dumps(meta, sort_keys=True, ensure_ascii=False, indent=1)
+        )
 
     def _transcript_path(self, key, transcriber_name):
         return self._base(key) + f".{_digest(transcriber_name)[:12]}.transcript.json"
@@ -93,8 +104,12 @@ class ClipCache:
 
     def store_transcript(self, key, transcriber_name, attempts, text):
         entry = {"transcriber": transcriber_name, "attempts": attempts, "text": text}
-        atomic_write_text(self._transcript_path(key, transcriber_name), json.dumps(entry, ensure_ascii=False))
+        atomic_write_text(
+            self._transcript_path(key, transcriber_name), json.dumps(entry, ensure_ascii=False)
+        )
 
     def chapter_path(self, clip_keys, encoding):
         """Location of the encoded MP3 for a chapter made of these clips, in this order."""
-        return os.path.join(self.chapters_dir, _digest({"clips": clip_keys, "encoding": encoding}) + ".mp3")
+        return os.path.join(
+            self.chapters_dir, _digest({"clips": clip_keys, "encoding": encoding}) + ".mp3"
+        )

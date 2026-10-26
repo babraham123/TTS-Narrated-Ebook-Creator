@@ -44,8 +44,16 @@ class Runner:
 
     def args(self, out_name, work="work", extra=()):
         out = str(self.tmp_path / out_name)
-        return [self.book, out, "--voice", self.voice, "--skip-audio",
-                "--work-dir", str(self.tmp_path / work), *extra]
+        return [
+            self.book,
+            out,
+            "--voice",
+            self.voice,
+            "--skip-audio",
+            "--work-dir",
+            str(self.tmp_path / work),
+            *extra,
+        ]
 
     def __call__(self, out_name="out.epub", work="work", extra=(), env=None):
         self.monkeypatch.delenv("CALLIOPE_FORCE_SILENCE", raising=False)
@@ -82,5 +90,10 @@ def run_cli(tmp_path, book, voice, monkeypatch):
 def spawn_cli(args, env=None):
     """Start the CLI in a child process (isolated mode) for signal tests."""
     full_env = {**os.environ, **(env or {})}
-    return subprocess.Popen([sys.executable, "-I", "-m", "calliope", *args], env=full_env,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return subprocess.Popen(
+        [sys.executable, "-I", "-m", "calliope", *args],
+        env=full_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )

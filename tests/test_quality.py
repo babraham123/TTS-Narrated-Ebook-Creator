@@ -65,11 +65,15 @@ def test_exhausted_retries_keep_best_attempt_and_flag_it(run_cli):
 @pytest.mark.parametrize(
     "wav, text, reasons",
     [
-        (tone(2.0), "x" * 28, []),                                # 2 s expected at 14 chars/s
-        (tone(0.3), "x" * 70, ["too_short"]),                     # 5 s expected
-        (tone(20.0), "x" * 28, ["too_long"]),                     # > 2 s * 2.5 + 1 s
+        (tone(2.0), "x" * 28, []),  # 2 s expected at 14 chars/s
+        (tone(0.3), "x" * 70, ["too_short"]),  # 5 s expected
+        (tone(20.0), "x" * 28, ["too_long"]),  # > 2 s * 2.5 + 1 s
         (np.zeros(SR * 2, dtype=np.float32), "x" * 28, ["mostly_silence"]),
-        (np.concatenate([tone(0.5), np.zeros(SR * 2, dtype=np.float32)]), "x" * 28, ["mostly_silence"]),
+        (
+            np.concatenate([tone(0.5), np.zeros(SR * 2, dtype=np.float32)]),
+            "x" * 28,
+            ["mostly_silence"],
+        ),
         (np.zeros(0, dtype=np.float32), "x" * 28, ["too_short", "mostly_silence"]),
     ],
 )
@@ -82,13 +86,15 @@ def test_evaluate(wav, text, reasons):
 
 def test_worse_clips_score_worse():
     cfg = QAConfig()
-    slightly = evaluate(tone(0.7), SR, "x" * 28, cfg)   # limit is 0.8 s
+    slightly = evaluate(tone(0.7), SR, "x" * 28, cfg)  # limit is 0.8 s
     badly = evaluate(tone(0.1), SR, "x" * 28, cfg)
     assert 0 < slightly.badness < badly.badness
 
 
 def test_error_rate():
-    assert error_rate("The clocks were striking thirteen.", "the clocks were striking thirteen") == 0
+    assert (
+        error_rate("The clocks were striking thirteen.", "the clocks were striking thirteen") == 0
+    )
     assert error_rate("one two three four", "one two four") == pytest.approx(0.25)
     assert error_rate("你好世界", "你好", lang="zh") == pytest.approx(0.5)
     assert error_rate("Chapter One", "Chapter 1.") == 0  # Whisper's digits match number words
@@ -125,8 +131,14 @@ class FakeTranscriber:
 
 def test_whisper_check_flags_high_error_rate_and_caches_transcripts(tmp_path, book, voice):
     work = str(tmp_path / "work")
-    opts = Options(input=book, output=str(tmp_path / "out.epub"), voice=voice, lang="en",
-                   model="fake", work_dir=work)
+    opts = Options(
+        input=book,
+        output=str(tmp_path / "out.epub"),
+        voice=voice,
+        lang="en",
+        model="fake",
+        work_dir=work,
+    )
     transcriber = FakeTranscriber(work, garble="A short one.")
 
     stats = run(opts, FakeBackend, transcriber, log=lambda *_: None)

@@ -23,100 +23,167 @@ GROUP_MARK = ""
 # one of them is read as a year.
 WORDS = {
     "en": {
-        "percent": "percent", "degree": ("degree", "degrees"), "and": "and",
-        "$": ("dollar", "dollars"), "€": ("euro", "euros"), "£": ("pound", "pounds"),
-        "¥": ("yen", "yen"), "number": "number",
-        "point": "point", "to": "to", "minus": "minus",
+        "percent": "percent",
+        "degree": ("degree", "degrees"),
+        "and": "and",
+        "$": ("dollar", "dollars"),
+        "€": ("euro", "euros"),
+        "£": ("pound", "pounds"),
+        "¥": ("yen", "yen"),
+        "number": "number",
+        "point": "point",
+        "to": "to",
+        "minus": "minus",
         "year_cues": "in since by from until till to of after before around circa c. "
-                     "year anno ad between and january february march april may june july "
-                     "august september october november december",
+        "year anno ad between and january february march april may june july "
+        "august september october november december",
         "chapter": "chapter part book volume act scene section appendix canto",
         "regnal": ("the {}", None),
     },
     "da": {
-        "percent": "procent", "degree": ("grad", "grader"), "and": "og", "one": "en",
-        "$": ("dollar", "dollar"), "€": ("euro", "euro"), "£": ("pund", "pund", "et"),
+        "percent": "procent",
+        "degree": ("grad", "grader"),
+        "and": "og",
+        "one": "en",
+        "$": ("dollar", "dollar"),
+        "€": ("euro", "euro"),
+        "£": ("pund", "pund", "et"),
         "¥": ("yen", "yen"),
-        "point": "komma", "to": "til", "minus": "minus",
+        "point": "komma",
+        "to": "til",
+        "minus": "minus",
         "year_cues": "i siden fra til år året efter før indtil omkring januar februar marts "
-                     "april maj juni juli august september oktober november december",
+        "april maj juni juli august september oktober november december",
         "chapter": "kapitel del bog bind akt scene afsnit",
         "regnal": ("den {}", None),
     },
     "de": {
-        "percent": "Prozent", "degree": ("Grad", "Grad"), "and": "und", "one": "ein",
-        "$": ("Dollar", "Dollar"), "€": ("Euro", "Euro"), "£": ("Pfund", "Pfund"),
+        "percent": "Prozent",
+        "degree": ("Grad", "Grad"),
+        "and": "und",
+        "one": "ein",
+        "$": ("Dollar", "Dollar"),
+        "€": ("Euro", "Euro"),
+        "£": ("Pfund", "Pfund"),
         "¥": ("Yen", "Yen"),
-        "point": "Komma", "to": "bis", "minus": "minus",
+        "point": "Komma",
+        "to": "bis",
+        "minus": "minus",
         "year_cues": "im seit bis von ab um nach vor jahr jahre jahres anno januar jänner "
-                     "februar märz april mai juni juli august september oktober november "
-                     "dezember",
+        "februar märz april mai juni juli august september oktober november "
+        "dezember",
         "chapter": "kapitel teil buch band akt szene abschnitt anhang",
         "regnal": ("der {}", None),
     },
     "es": {
-        "percent": "por ciento", "degree": ("grado", "grados"), "and": "y", "one": "un",
-        "$": ("dólar", "dólares"), "€": ("euro", "euros"), "£": ("libra", "libras", "una"),
+        "percent": "por ciento",
+        "degree": ("grado", "grados"),
+        "and": "y",
+        "one": "un",
+        "$": ("dólar", "dólares"),
+        "€": ("euro", "euros"),
+        "£": ("libra", "libras", "una"),
         "¥": ("yen", "yenes"),
-        "point": "coma", "to": "a", "minus": "menos",
+        "point": "coma",
+        "to": "a",
+        "minus": "menos",
         "year_cues": "en desde hasta hacia de año",
         "chapter": "capítulo parte libro tomo acto escena sección",
         "regnal": ("{}", 10),
     },
     "fr": {
-        "percent": "pour cent", "degree": ("degré", "degrés"), "and": "et",
-        "$": ("dollar", "dollars"), "€": ("euro", "euros"), "£": ("livre", "livres", "une"),
+        "percent": "pour cent",
+        "degree": ("degré", "degrés"),
+        "and": "et",
+        "$": ("dollar", "dollars"),
+        "€": ("euro", "euros"),
+        "£": ("livre", "livres", "une"),
         "¥": ("yen", "yens"),
-        "point": "virgule", "to": "à", "minus": "moins",
+        "point": "virgule",
+        "to": "à",
+        "minus": "moins",
         "year_cues": "en depuis dès vers avant après année an",
         "chapter": "chapitre partie livre tome acte scène section",
         "regnal": ("{}", 1),
     },
     "it": {
-        "percent": "per cento", "degree": ("grado", "gradi"), "and": "e", "one": "un",
-        "$": ("dollaro", "dollari"), "€": ("euro", "euro"),
-        "£": ("sterlina", "sterline", "una"), "¥": ("yen", "yen"),
-        "point": "virgola", "to": "a", "minus": "meno",
+        "percent": "per cento",
+        "degree": ("grado", "gradi"),
+        "and": "e",
+        "one": "un",
+        "$": ("dollaro", "dollari"),
+        "€": ("euro", "euro"),
+        "£": ("sterlina", "sterline", "una"),
+        "¥": ("yen", "yen"),
+        "point": "virgola",
+        "to": "a",
+        "minus": "meno",
         "year_cues": "nel dal al del entro verso anno",
         "chapter": "capitolo parte libro volume atto scena sezione",
         "regnal": ("{}", None),
     },
     "nl": {
-        "percent": "procent", "degree": ("graad", "graden"), "and": "en",
-        "$": ("dollar", "dollar"), "€": ("euro", "euro"), "£": ("pond", "pond"),
+        "percent": "procent",
+        "degree": ("graad", "graden"),
+        "and": "en",
+        "$": ("dollar", "dollar"),
+        "€": ("euro", "euro"),
+        "£": ("pond", "pond"),
         "¥": ("yen", "yen"),
-        "point": "komma", "to": "tot", "minus": "min",
+        "point": "komma",
+        "to": "tot",
+        "minus": "min",
         "year_cues": "in sinds tot van vanaf na voor rond jaar januari februari maart april "
-                     "mei juni juli augustus september oktober november december",
+        "mei juni juli augustus september oktober november december",
         "chapter": "hoofdstuk deel boek akte scène sectie bijlage",
         "regnal": ("de {}", None),
     },
     "no": {
-        "percent": "prosent", "degree": ("grad", "grader"), "and": "og", "one": "en",
-        "$": ("dollar", "dollar"), "€": ("euro", "euro"), "£": ("pund", "pund", "ett"),
+        "percent": "prosent",
+        "degree": ("grad", "grader"),
+        "and": "og",
+        "one": "en",
+        "$": ("dollar", "dollar"),
+        "€": ("euro", "euro"),
+        "£": ("pund", "pund", "ett"),
         "¥": ("yen", "yen"),
-        "point": "komma", "to": "til", "minus": "minus",
+        "point": "komma",
+        "to": "til",
+        "minus": "minus",
         "year_cues": "i siden fra til år året etter før innen rundt januar februar mars "
-                     "april mai juni juli august september oktober november desember",
+        "april mai juni juli august september oktober november desember",
         "chapter": "kapittel del bok bind akt scene avsnitt",
         "regnal": ("den {}", None),
     },
     "pt": {
-        "percent": "por cento", "degree": ("grau", "graus"), "and": "e",
-        "$": ("dólar", "dólares"), "€": ("euro", "euros"), "£": ("libra", "libras", "uma"),
+        "percent": "por cento",
+        "degree": ("grau", "graus"),
+        "and": "e",
+        "$": ("dólar", "dólares"),
+        "€": ("euro", "euros"),
+        "£": ("libra", "libras", "uma"),
         "¥": ("iene", "ienes"),
-        "point": "vírgula", "to": "a", "minus": "menos",
+        "point": "vírgula",
+        "to": "a",
+        "minus": "menos",
         "year_cues": "em desde até de ano",
         "chapter": "capítulo parte livro tomo ato cena secção seção",
         "regnal": ("{}", 10),
     },
     "sv": {
-        "percent": "procent", "degree": ("grad", "grader"), "and": "och", "one": "en",
-        "$": ("dollar", "dollar"), "€": ("euro", "euro"), "£": ("pund", "pund", "ett"),
+        "percent": "procent",
+        "degree": ("grad", "grader"),
+        "and": "och",
+        "one": "en",
+        "$": ("dollar", "dollar"),
+        "€": ("euro", "euro"),
+        "£": ("pund", "pund", "ett"),
         "¥": ("yen", "yen"),
-        "point": "komma", "to": "till", "minus": "minus",
+        "point": "komma",
+        "to": "till",
+        "minus": "minus",
         "year_cues": "i sedan från till år året efter före innan omkring januari februari "
-                     "mars april maj juni juli augusti september oktober november december",
+        "mars april maj juni juli augusti september oktober november december",
         "chapter": "kapitel del bok band akt scen avsnitt",
         "regnal": ("den {}", None),
     },
@@ -129,17 +196,28 @@ _FIXUPS = {
     "sv": [(re.compile("etttusen"), "ettusen")],
 }
 # The feminine "one", for hours ("une heure", "la una").
-_FEMININE = {"fr": (r"\bun$", "une"), "es": (r"uno$", "una"), "it": (r"uno$", "una"),
-             "pt": (r"\bum$", "uma")}
+_FEMININE = {
+    "fr": (r"\bun$", "une"),
+    "es": (r"uno$", "una"),
+    "it": (r"uno$", "una"),
+    "pt": (r"\bum$", "uma"),
+}
 
 # English scale words after an amount ("$5 million", "$5m") go before the currency.
-_EN_SCALES = {"k": "thousand", "m": "million", "bn": "billion",
-              "thousand": "thousand", "million": "million",
-              "billion": "billion", "trillion": "trillion"}
+_EN_SCALES = {
+    "k": "thousand",
+    "m": "million",
+    "bn": "billion",
+    "thousand": "thousand",
+    "million": "million",
+    "billion": "billion",
+    "trillion": "trillion",
+}
 
 # Monarchs and popes whose numeral is read as an ordinal ("Henry VIII"). A list, because
 # "Then I" or "World War II" must not become "Then the first" or "World War the second".
-_REGNAL_NAMES = set("""
+_REGNAL_NAMES = set(
+    """
     Henry Charles Elizabeth Edward George William James Louis Mary Richard John Stephen
     Victoria Anne Peter Paul Pius Leo Gregory Benedict Innocent Clement Urban Boniface
     Sixtus Alexander Nicholas Catherine Philip Frederick Ferdinand Isabella Napoleon Ivan
@@ -150,20 +228,36 @@ _REGNAL_NAMES = set("""
     Giovanni Luigi
     Enrico Federico Gustav Gustaf Christian Frederik Haakon Olav Harald Magnus Margrethe
     Carl Oscar Oskar Erik Kristian Willem Beatrix Juliana Wilhelmina Robert David Malcolm
-""".split())
-_FEMALE_NAMES = {"Elizabeth", "Victoria", "Anne", "Mary", "Catherine", "Isabella", "Maria",
-                 "Elisabeth", "Katharina", "Isabel", "Margrethe", "Beatrix", "Juliana",
-                 "Wilhelmina"}
+""".split()
+)
+_FEMALE_NAMES = {
+    "Elizabeth",
+    "Victoria",
+    "Anne",
+    "Mary",
+    "Catherine",
+    "Isabella",
+    "Maria",
+    "Elisabeth",
+    "Katharina",
+    "Isabel",
+    "Margrethe",
+    "Beatrix",
+    "Juliana",
+    "Wilhelmina",
+}
 _REGNAL = re.compile(
     rf"\b(?P<name>{'|'.join(sorted(_REGNAL_NAMES, key=len, reverse=True))})"
     # German and Scandinavian write "Heinrich VIII. war"; that dot is not a full stop.
-    r"\s+(?P<num>[IVXLC]+)(?!\w)(?:\.(?=\s+[a-zäöüßæøå]))?")
+    r"\s+(?P<num>[IVXLC]+)(?!\w)(?:\.(?=\s+[a-zäöüßæøå]))?"
+)
 # A lone "I" needs a clear end ("Part I." / "Part I:"), so "Part I think" is left alone.
 _CHAPTER = {
     lang: re.compile(
         rf"\b(?P<kw>{'|'.join(words['chapter'].split())})\s+"
         r"(?P<num>[IVXLCDM]{2,}|I(?=\s*(?:$|[.:;,)–—-])))(?![\w'])",
-        re.IGNORECASE)
+        re.IGNORECASE,
+    )
     for lang, words in WORDS.items()
 }
 _ROMAN_HEADING = re.compile(r"\s*([IVXL]{2,})\.?\s*")
@@ -172,8 +266,10 @@ _FR_ROMAN_ORDINAL = re.compile(r"\b(?P<num>[IVXLC]{2,}|I)(?P<sfx>er|re|e|ème)\b
 _ROMAN = re.compile(r"M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})")
 _ROMAN_VALUES = {"M": 1000, "D": 500, "C": 100, "L": 50, "X": 10, "V": 5, "I": 1}
 
-_DE_MONTHS = set("januar jänner februar märz april mai juni juli august september oktober "
-                 "november dezember".split())
+_DE_MONTHS = set(
+    "januar jänner februar märz april mai juni juli august september oktober "
+    "november dezember".split()
+)
 _DE_DATIVE = {"am", "im", "vom", "zum", "zur", "beim", "dem", "den", "des"}
 _DE_DETERMINERS = _DE_DATIVE | {"der", "die", "das", "ein", "eine", "einen", "bis"}
 
@@ -193,15 +289,18 @@ _PERCENT = re.compile(rf"{_START}(?P<num>{_NUM})\s?%")
 # After NFKC a masculine ordinal sign used as a degree sign ("20º C") reads "20o C".
 _DEGREES = re.compile(
     rf"(?:(?<![\w.,])(?P<minus>[-−]))?{_START}(?P<num>{_NUM})\s?"
-    r"(?:°|o(?=\s?[CF](?![A-Za-z])))(?:\s?(?P<unit>[CF])(?![A-Za-z]))?")
+    r"(?:°|o(?=\s?[CF](?![A-Za-z])))(?:\s?(?P<unit>[CF])(?![A-Za-z]))?"
+)
 _AMPERSAND = re.compile(r"\s+&\s+")
 _HASH_NUMBER = re.compile(r"#(?=\d)")
 _PHONE = re.compile(r"(?<![\w+])\+\d[\d ()-]{5,}\d(?!\w)")
 _DIGIT_CHAIN = re.compile(r"(?<![\w.,-])\d+(?:-\d+){2,}(?![\w-])")
 _RANGE = re.compile(rf"{_START}(?P<a>\d+)\s?(?P<dash>[–-])\s?(?P<b>\d+){_END}")
 # A trailing "Uhr"/"uur" is consumed: the spoken time already says it.
-_TIME = re.compile(r"(?<![\w:.,])(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)(?![\w:]|[.,]\d)"
-                   r"(?:\s(?:Uhr|uur)\b)?")
+_TIME = re.compile(
+    r"(?<![\w:.,])(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)(?![\w:]|[.,]\d)"
+    r"(?:\s(?:Uhr|uur)\b)?"
+)
 _FR_TIME = re.compile(r"(?<![\w:.,])(?P<h>[01]?\d|2[0-3])\s?h(?:\s?(?P<m>[0-5]\d))?(?!\w)")
 _EN_DECADE = re.compile(r"(?<![\w'])'?(?P<num>\d{1,3}0)s\b")
 _EN_ERA = re.compile(r"\s*(?:AD|BC|BCE|CE)\b")
@@ -248,7 +347,7 @@ def _spell(num, lang):
     if parsed is None:
         return None
     whole, fraction = parsed
-    if whole >= 10 ** 15:
+    if whole >= 10**15:
         return _digits(num, lang)
     words = n2w(whole, lang)
     if fraction:
@@ -294,8 +393,7 @@ def _roman_value(numeral):
     if not numeral or not _ROMAN.fullmatch(numeral):
         return None
     values = [_ROMAN_VALUES[c] for c in numeral]
-    return sum(-v if i + 1 < len(values) and v < values[i + 1] else v
-               for i, v in enumerate(values))
+    return sum(-v if i + 1 < len(values) and v < values[i + 1] else v for i, v in enumerate(values))
 
 
 def _regnal(value, name, lang):
@@ -326,15 +424,15 @@ def _roman_numerals(text, lang):
 
     def regnal(m):
         value = _roman_value(m.group("num"))
-        return f"{m.group('name')} {_regnal(value, m.group('name'), lang)}" if value \
-            else m.group(0)
+        return f"{m.group('name')} {_regnal(value, m.group('name'), lang)}" if value else m.group(0)
 
     def fr_ordinal(m):
         value = _roman_value(m.group("num"))
         if not value:
             return m.group(0)
-        return "première" if m.group("sfx") == "re" and value == 1 \
-            else n2w(value, lang, to="ordinal")
+        return (
+            "première" if m.group("sfx") == "re" and value == 1 else n2w(value, lang, to="ordinal")
+        )
 
     text = _CHAPTER[lang].sub(chapter, text)
     text = _REGNAL.sub(regnal, text)
@@ -345,6 +443,7 @@ def _roman_numerals(text, lang):
 
 def _digit_runs(text, lang):
     """Phone numbers and ISBN-like chains are read digit by digit, a pause between groups."""
+
     def by_groups(m):
         return ", ".join(_digits(g, lang) for g in re.findall(r"\d+", m.group(0)))
 
@@ -440,8 +539,9 @@ def _dotted_ordinal(m, text, lang):
     in German, before a month or after an article ("am 3. Mai", "der 2. Weltkrieg"). At
     the end of a sentence, or before a capitalised word, it stays a cardinal."""
     nxt, prev = m.group("next"), _previous_word(text, m.start())
-    clear = nxt[0].islower() or (lang == "de" and (nxt.lower() in _DE_MONTHS
-                                                   or prev in _DE_DETERMINERS))
+    clear = nxt[0].islower() or (
+        lang == "de" and (nxt.lower() in _DE_MONTHS or prev in _DE_DETERMINERS)
+    )
     if not clear:
         return m.group(0)
     words = n2w(int(m.group("num")), lang, to="ordinal")
@@ -480,10 +580,12 @@ def _bare_numbers(text, lang):
     def sub(m):
         num = m.group("num")
         if _is_year(num):
-            after = text[m.end():]
-            if (_previous_word(text, m.start()) in cues
-                    or re.match(r"\s*(?:$|[.,;:!?)\]])", after)
-                    or (lang == "en" and _EN_ERA.match(after))):
+            after = text[m.end() :]
+            if (
+                _previous_word(text, m.start()) in cues
+                or re.match(r"\s*(?:$|[.,;:!?)\]])", after)
+                or (lang == "en" and _EN_ERA.match(after))
+            ):
                 return _year(int(num), lang)
         if re.fullmatch(r"0\d+", num) or (num.isdigit() and len(num) >= 7):
             return _digits(num, lang)  # an identifier rather than an amount
