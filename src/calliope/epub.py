@@ -1,5 +1,6 @@
 """EPUB handling: extraction, sentence wrapping, SMIL generation, OPF update and packaging."""
 
+import functools
 import os
 import re
 import shutil
@@ -69,6 +70,7 @@ def write_nuclear_css(styles_dir, css_filename):
         f.write(nuclear_css)
 
 
+@functools.cache
 def ensure_sentence_tokenizer():
     # NLTK >= 3.9 loads the pickle-free "punkt_tab" data instead of "punkt".
     try:
@@ -148,6 +150,7 @@ def split_sentences(text, lang="en"):
     """Sentence-split with the punkt model for `lang` (English fallback); punkt has no CJK model."""
     if lang in ("zh", "ja"):
         return [s for s in (part.strip() for part in _CJK_SENTENCE_END.split(text)) if s]
+    ensure_sentence_tokenizer()
     return nltk.sent_tokenize(text, language=PUNKT_LANGUAGES.get(lang, "english"))
 
 

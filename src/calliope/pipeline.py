@@ -31,7 +31,6 @@ from calliope.epub import (
     create_smil_content,
     detect_styles_dir,
     encode_mp3,
-    ensure_sentence_tokenizer,
     find_opf,
     process_xhtml_inplace,
     unzip_epub,
@@ -90,7 +89,6 @@ def model_id(model):
 
 def _prepare_book(opts, build_dir):
     """Extract the book, wrap sentences and return (opf_path, styles info, chapters)."""
-    ensure_sentence_tokenizer()
     unzip_epub(opts.input, build_dir)
     opf_path, oebps_dir = find_opf(build_dir)
     with open(opf_path, "r", encoding="utf-8") as f:
