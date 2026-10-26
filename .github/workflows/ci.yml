@@ -16,8 +16,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # uv installs the Python 3.12 that pyproject.toml requires.
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      # ffprobe checks the audio's timing; epubcheck validates the EPUB for real.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg epubcheck
+      # ffprobe checks the audio's timing.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # epubcheck validates the EPUB for real. Ubuntu's is 4.x, which applies EPUB 3.2 rules;
+      # the release ships no checksums, so its zip's hash is pinned with the version.
+      - env:
+          EPUBCHECK_VERSION: 5.4.0
+          EPUBCHECK_SHA256: 33350c61038e71dfb3d45a76aed04bf5481e6d5500cb780f6e98db8bbd15a28c
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/epubcheck.zip" \
+            "https://github.com/w3c/epubcheck/releases/download/v$EPUBCHECK_VERSION/epubcheck-$EPUBCHECK_VERSION.zip"
+          echo "$EPUBCHECK_SHA256  $RUNNER_TEMP/epubcheck.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/epubcheck.zip" -d "$RUNNER_TEMP"
+          printf '#!/bin/sh\nexec java -jar %s "$@"\n' \
+            "$RUNNER_TEMP/epubcheck-$EPUBCHECK_VERSION/epubcheck.jar" | sudo tee /usr/local/bin/epubcheck
+          sudo chmod 755 /usr/local/bin/epubcheck
       # Rules and style are in ruff.toml.
       - run: uvx ruff@0.17.0 check .
       - run: uvx ruff@0.17.0 format --check .
