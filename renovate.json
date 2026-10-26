@@ -76,6 +76,13 @@
         "setuptools"
       ],
       "allowedVersions": "<82"
+    },
+    {
+      "description": "chatterbox-tts 0.1.7 pins torch 2.6.0, whose CUDA 12.4 wheels stop at Python 3.13; the lock and container use 3.12",
+      "matchDepTypes": [
+        "requires-python"
+      ],
+      "enabled": false
     }
   ]
 }
