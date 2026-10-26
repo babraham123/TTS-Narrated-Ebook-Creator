@@ -6,7 +6,7 @@
 #
 # torch 2.6.0+cu124 brings its own CUDA 12.4 user-space libraries; the CUDA 12.4 + cuDNN 9 base
 # matches them and provides the libraries CTranslate2 (faster-whisper) loads.
-FROM docker.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM docker.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /uvx /usr/local/bin/
 
