@@ -1,0 +1,64 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "minimumReleaseAge": "3 days",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ruff, run by uvx in CI",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "ruff@(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "ruff"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "groupName": "container base images"
+    },
+    {
+      "description": "Ranges in pyproject.toml stay as written; only uv.lock moves within them",
+      "matchManagers": [
+        "pep621"
+      ],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "CUDA 12.4 is the newest whose torch and CTranslate2 builds still run on Pascal (Tesla P4)",
+      "matchPackageNames": [
+        "docker.io/nvidia/cuda",
+        "nvidia/cuda"
+      ],
+      "allowedVersions": "/^12\\.4\\./"
+    },
+    {
+      "description": "Pinned to chatterbox-tts's own torch pins and to the last CTranslate2 built for CUDA 12.4",
+      "matchPackageNames": [
+        "torch",
+        "torchaudio",
+        "ctranslate2"
+      ],
+      "enabled": false
+    }
+  ]
+}
