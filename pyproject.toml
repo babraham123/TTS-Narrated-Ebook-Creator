@@ -51,6 +51,8 @@ environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+# chatterbox-tts requires gradio only for its demo app, which this package never imports.
+exclude-dependencies = ["gradio"]
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
