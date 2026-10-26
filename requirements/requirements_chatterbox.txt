@@ -116,9 +116,9 @@ diffusers==0.29.0 ; (platform_machine == 'arm64' and sys_platform == 'darwin') o
     --hash=sha256:0212030a8fabe7a07d1c8e925ccdf7a529a98b0425fa078900a679b2451a8ac2 \
     --hash=sha256:4c194d2379644a0f7ef9b4ff12c8cf5de4c6324e811265754f08e2f839b8cedb
     # via chatterbox-tts
-distlib==0.4.3 ; (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
-    --hash=sha256:4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b \
-    --hash=sha256:f152097224a0ae24be5a0f6bae1b9359af82133bce63f98a95f86cae1aede9ed
+distlib==0.4.4; (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
+    --hash=sha256:ca4175b4ac7f71223cc30ed7248c45d2b38c2439d8ee6e498ab67ed63cf3508d \
+    --hash=sha256:cf09d55b1e85a89576b036aeb71550bfd68320f3f21761ca329eadadad918638
     # via virtualenv
 einops==0.8.2 ; (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
     --hash=sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193 \
