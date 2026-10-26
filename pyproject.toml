@@ -9,7 +9,7 @@ description = "Turn an EPUB into a narrated EPUB 3 with Media Overlays using loc
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = "==3.12.*"
+requires-python = "==3.15.*"
 dependencies = [
     "beautifulsoup4>=4.12",
     "lxml>=5",
