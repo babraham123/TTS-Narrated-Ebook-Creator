@@ -683,9 +683,9 @@ tqdm==4.70.1 ; (platform_machine == 'arm64' and sys_platform == 'darwin') or (pl
     #   nltk
     #   s3tokenizer
     #   transformers
-transformers==5.2.0 ; (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
-    --hash=sha256:0088b8b46ccc9eff1a1dca72b5d618a5ee3b1befc3e418c9512b35dea9f9a650 \
-    --hash=sha256:9ecaf243dc45bee11a7d93f8caf03746accc0cb069181bbf4ad8566c53e854b4
+transformers==5.10.1; (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
+    --hash=sha256:31112d1dcdfcf9934242acbba891f44e2279ff74b9b8ba4595640e0e04195a3a \
+    --hash=sha256:ccb919ea1b77338b44d0d45d23f7472081906b1bb6ed8e5f5cf4d692d1da03d4
     # via chatterbox-tts
 triton==3.2.0 ; platform_machine == 'x86_64' and sys_platform == 'linux' \
     --hash=sha256:8d9b215efc1c26fa7eefb9a157915c92d52e000d2bf83e5f69704047e63f125c
