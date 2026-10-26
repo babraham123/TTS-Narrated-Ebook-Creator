@@ -61,6 +61,13 @@
         "ctranslate2"
       ],
       "enabled": false
+    },
+    {
+      "description": "resemble-perth (Chatterbox's watermarker) imports pkg_resources, which setuptools 82 removed",
+      "matchPackageNames": [
+        "setuptools"
+      ],
+      "allowedVersions": "<82"
     }
   ]
 }
