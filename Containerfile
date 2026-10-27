@@ -14,11 +14,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# UV_NO_CACHE: uv's cache would otherwise land in the layer, a second copy of the venv
+# (UV_LINK_MODE=copy) that doubles the disk a build needs.
 ENV UV_PYTHON=3.12 \
     UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
     PATH=/opt/venv/bin:$PATH \
     NLTK_DATA=/usr/share/nltk_data \
     HF_HOME=/cache \
