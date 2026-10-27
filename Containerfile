@@ -10,7 +10,11 @@ FROM docker.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04@sha256:2fcc428064648
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /uvx /usr/local/bin/
 
+ARG DEBIAN_FRONTEND=noninteractive
+
+# upgrade: the pinned CUDA base lags Ubuntu's security updates (openssl, gnupg).
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,7 +35,11 @@ WORKDIR /app
 
 # Dependencies first, from the lock file only, so source edits don't invalidate this layer.
 COPY pyproject.toml uv.lock README.md LICENSE ./
+# The standalone Python's own pip goes: uv installs everything, and pip's vendored certifi,
+# urllib3, msgpack and setuptools lag the locked ones and trip image scans.
 RUN uv python install 3.12 \
+    && rm -rf /opt/python/cpython-3.12*/lib/python3.12/site-packages/pip* \
+        /opt/python/cpython-3.12*/bin/pip* \
     && uv sync --frozen --no-dev --extra tts --extra whisper --no-install-project
 
 COPY src ./src
