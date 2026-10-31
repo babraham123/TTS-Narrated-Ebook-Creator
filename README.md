@@ -83,6 +83,15 @@ calliope roman.epub roman_lest.epub --voice stemme.wav --lang no --work-dir /tmp
 Exit status: `0` success (even if some clips are flagged; see the report), `1` failure,
 `2` usage error, `143` SIGTERM, `130` Ctrl-C.
 
+### GPU temperature
+Before synthesizing or transcribing each clip, `calliope` reads the GPU temperature with
+`nvidia-smi` (the hottest GPU when there are several). Above `GPU_PAUSE_TEMP` °C (default 80)
+it pauses, logging one line, and checks every 10 s until the temperature is below
+`GPU_RESUME_TEMP` °C (default 70), then logs one line and carries on. This keeps a passively
+cooled card such as the Tesla P4 from overheating in a case without enough airflow. If
+`nvidia-smi` is missing or fails, `calliope` warns once and runs without the guard. The
+report's `gpu_pause_seconds` is the time spent paused, which `synthesis_seconds` leaves out.
+
 ### Resuming
 Each sentence's audio is cached in `--work-dir` under a key that hashes the input book, the
 sentence text, the model (and `chatterbox-tts` version), the language, the voice sample and
@@ -117,7 +126,7 @@ N attempts with `IDX:N`.
 `OUT.report.json` is written on every run, including failed or interrupted ones (`status`:
 `ok`, `failed`, `terminated`, `interrupted`). It contains chapter and sentence counts, clips
 synthesized and cached, attempts and retries, the flagged sentences with their reasons and
-metrics, audio and wall-clock seconds, and:
+metrics, audio and wall-clock seconds, the time paused for GPU temperature, and:
 
 * `real_time_factor` = `wall_seconds / audio_seconds` for the whole run;
 * `synthesis_real_time_factor` = `synthesis_seconds / synthesized_audio_seconds` for the TTS
@@ -185,6 +194,7 @@ It exits 0 when the book is done or the inbox is empty, 1 when the book failed.
 | `VOICES_DIR` | `/voices` | the reference voice samples |
 | `READALOUDS_OWNER` | `0:0` | `UID:GID` the delivered files and their directories belong to |
 | `NTFY_URL`, `NTFY_ALERT_ACCESS_TOKEN` | unset | the ntfy topic URL and bearer token; no post without both |
+| `GPU_PAUSE_TEMP`, `GPU_RESUME_TEMP` | `80`, `70` | passed on to `calliope`: pause above the first, resume below the second (°C); see [GPU temperature](#gpu-temperature) |
 
 ### Running on a Tesla P4 (Pascal, sm_61)
 * **Why CUDA 12.4 and torch 2.6.0:** `torch==2.6.0` is the version `chatterbox-tts` 0.1.7 pins,

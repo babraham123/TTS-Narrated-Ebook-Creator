@@ -12,6 +12,8 @@
 #   VOICES_DIR         the <voice>.wav reference samples (default /voices)
 #   READALOUDS_OWNER   UID:GID the delivered files belong to (default 0:0)
 #   NTFY_URL, NTFY_ALERT_ACCESS_TOKEN   where to post the outcome; no post without both
+#   GPU_PAUSE_TEMP, GPU_RESUME_TEMP    passed on to calliope, which pauses between sentences
+#                      while the GPU is hotter than the first until it cools below the second
 # Usage:
 #   calliope_batch.py
 

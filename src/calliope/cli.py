@@ -13,6 +13,7 @@ from calliope import __version__
 from calliope.files import atomic_write_text
 from calliope.pipeline import Options, run
 from calliope.qa import QAConfig, WhisperTranscriber
+from calliope.thermal import GpuGuard
 from calliope.tts import MODELS, ChatterboxBackend, FakeBackend, resolve_model
 
 EXIT_FAILURE = 1
@@ -146,6 +147,10 @@ def parse_arguments(argv=None):
         args.force_silence = parse_force_silence(os.environ.get(FORCE_SILENCE_ENV))
     except ValueError:
         parser.error(f"{FORCE_SILENCE_ENV} must look like '3,7:1'")
+    try:
+        args.guard = GpuGuard.from_env()
+    except ValueError as e:
+        parser.error(str(e))
     args.work_dir = args.work_dir or default_work_dir(args.output)
     return args
 
@@ -227,6 +232,7 @@ def build_report(args, opts, status, wall_seconds, stats=None, error=None):
             "audio_seconds": round(audio, 3),
             "synthesis_seconds": round(stats["synthesis_seconds"], 3),
             "synthesized_audio_seconds": round(synth_audio, 3),
+            "gpu_pause_seconds": round(stats["gpu_pause_seconds"], 3),
             "real_time_factor": round(wall_seconds / audio, 4) if audio else None,
             "synthesis_real_time_factor": (
                 round(stats["synthesis_seconds"] / synth_audio, 4) if synth_audio else None
@@ -267,7 +273,7 @@ def main(argv=None):
         if shutil.which("ffmpeg") is None:
             raise RuntimeError("ffmpeg not found on PATH")
         whisper = WhisperFactory(args) if args.whisper_check else None
-        stats = run(opts, make_backend_factory(args), whisper)
+        stats = run(opts, make_backend_factory(args), whisper, guard=args.guard)
     except Terminated:
         status, code = "terminated", EXIT_SIGTERM
         print(

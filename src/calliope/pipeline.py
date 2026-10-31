@@ -183,7 +183,14 @@ def _synthesize_clip(backend, s, cache, opts):
     return result, attempts, attempts - first
 
 
-def _transcribe_clips(unique, qa, cache, transcriber_factory, lang):
+class _NoGuard:
+    paused_seconds = 0.0
+
+    def wait(self):
+        pass
+
+
+def _transcribe_clips(unique, qa, cache, transcriber_factory, lang, guard):
     """Return key -> (error rate, transcript) for every clip, transcribing uncached ones."""
     transcriber = None  # loaded only if some transcript is not cached
     name = transcriber_factory.name
@@ -194,6 +201,7 @@ def _transcribe_clips(unique, qa, cache, transcriber_factory, lang):
         if text is None:
             if transcriber is None:
                 transcriber = transcriber_factory()
+            guard.wait()
             wav, sr, _meta = cache.load(key)
             text = transcriber.transcribe(wav, sr)
             cache.store_transcript(key, name, attempts, text)
@@ -201,13 +209,15 @@ def _transcribe_clips(unique, qa, cache, transcriber_factory, lang):
     return out
 
 
-def run(opts, make_backend, transcriber_factory=None, log=print):
+def run(opts, make_backend, transcriber_factory=None, log=print, guard=None):
     """Narrate opts.input into opts.output.
 
     make_backend() is called at most once, and only when some clip still needs synthesis.
     transcriber_factory, if given, enables the Whisper check: it must have a `name` attribute
-    and return an object with transcribe(wav, sr). Returns run statistics."""
+    and return an object with transcribe(wav, sr). guard, if given, is waited on before each
+    clip is synthesized or transcribed (see calliope.thermal). Returns run statistics."""
     started = time.monotonic()
+    guard = guard or _NoGuard()
     cache = ClipCache(opts.work_dir)
     build_dir = os.path.join(opts.work_dir, "build")
 
@@ -248,15 +258,16 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
         backend = make_backend()
         t0 = time.monotonic()
         for s in tqdm(todo, desc="TTS", unit="sentence"):
+            guard.wait()
             result, attempts, made = _synthesize_clip(backend, s, cache, opts)
             qa[s.key] = (result, attempts)
             attempts_this_run += made
             synth_audio_seconds += result.duration
-        synth_seconds = time.monotonic() - t0
+        synth_seconds = time.monotonic() - t0 - guard.paused_seconds
 
     wer = {}
     if transcriber_factory is not None:
-        wer = _transcribe_clips(unique, qa, cache, transcriber_factory, opts.lang)
+        wer = _transcribe_clips(unique, qa, cache, transcriber_factory, opts.lang, guard)
 
     flagged = []
     for s in sentences:
@@ -339,5 +350,6 @@ def run(opts, make_backend, transcriber_factory=None, log=print):
         "audio_seconds": sum(durations_ms.values()) / 1000.0,
         "synthesis_seconds": synth_seconds,
         "synthesized_audio_seconds": synth_audio_seconds,
+        "gpu_pause_seconds": guard.paused_seconds,
         "wall_seconds": time.monotonic() - started,
     }

@@ -97,3 +97,29 @@ def spawn_cli(args, env=None):
         stderr=subprocess.PIPE,
         text=True,
     )
+
+
+@pytest.fixture
+def fake_nvidia_smi(tmp_path, monkeypatch):
+    """Puts an nvidia-smi on PATH that reports the temperatures given to it, one per call; the
+    last one repeats. Returns a function taking the temperatures; it also sets PATH for
+    subprocesses through monkeypatch."""
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir()
+    temps = tmp_path / "gpu-temps"
+    script = bin_dir / "nvidia-smi"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        f"path = {str(temps)!r}\n"
+        "lines = open(path).read().split()\n"
+        "print(lines[0])\n"
+        "if len(lines) > 1:\n"
+        "    open(path, 'w').write('\\n'.join(lines[1:]))\n"
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    def set_temps(*values):
+        temps.write_text("\n".join(str(v) for v in values))
+
+    return set_temps
