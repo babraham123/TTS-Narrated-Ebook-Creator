@@ -16,7 +16,7 @@ dependencies = [
     "nltk>=3.9",
     "num2words==0.5.14",
     # chatterbox-tts requires numpy < 2 on Python < 3.13.
-    "numpy>=1.26,<2",
+    "numpy>=2.5,<3",
     "soundfile>=0.12",
     "tqdm>=4.66",
 ]
