@@ -22,12 +22,12 @@ Watch a short demonstration of the system in use. This video shows the conversio
 ---
 
 ## Prerequisites
-1.  **Python 3.12** (the Chatterbox stack is pinned and locked for 3.12).
+1.  **Python 3.14** (the Chatterbox stack is pinned and locked for 3.14).
 2.  **FFmpeg** on your `PATH` (audio is encoded to MP3 with `ffmpeg`).
     * **Ubuntu/Debian:** `sudo apt install ffmpeg`
     * **MacOS:** `brew install ffmpeg`
     * **Windows:** `winget install ffmpeg`
-3.  For GPU synthesis: an NVIDIA GPU and driver supporting CUDA 12.4 (see [Running on a Tesla P4](#running-on-a-tesla-p4-pascal-sm_61)).
+3.  For GPU synthesis: an NVIDIA GPU and driver supporting CUDA 12.6 (see [Running on a Tesla P4](#running-on-a-tesla-p4-pascal-sm_61)).
 
 Or use the [container image](#container), which bundles everything except the model weights.
 
@@ -36,15 +36,15 @@ Or use the [container image](#container), which bundles everything except the mo
 ## Installation
 The Chatterbox pipeline is a Python package (`src/calliope`) with a `calliope` command.
 Dependencies are pinned in `pyproject.toml` and locked in `uv.lock`: `chatterbox-tts==0.1.7`
-with `torch==2.6.0` / `torchaudio==2.6.0`, which on Linux x86_64 come from the CUDA 12.4
-(`cu124`) PyTorch index.
+with `torch==2.14.1` / `torchaudio==2.11.0`, which on Linux x86_64 come from the CUDA 12.6
+(`cu126`) PyTorch index.
 
 ```bash
 uv sync --extra tts                    # add --extra whisper for --whisper-check
 uv run calliope --help
 ```
 
-The lock covers Linux x86_64 (CUDA 12.4 wheels) and Apple Silicon macOS (PyPI wheels, CPU/MPS).
+The lock covers Linux x86_64 (CUDA 12.6 wheels) and Apple Silicon macOS (PyPI wheels, CPU/MPS).
 
 XTTS is unchanged from upstream: `pip install -r requirements/requirements_xtts.txt` in a
 separate Python 3.11 environment and run `python src/epub_processor_xtts.py`.
@@ -137,8 +137,8 @@ Lower is faster; below 1 is faster than real time.
 ---
 
 ## Container
-`Containerfile` builds a CUDA 12.4 image (`nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`) with
-Python 3.12, ffmpeg and the locked stack, including faster-whisper. The `calliope` command is
+`Containerfile` builds a CUDA 12.6 image (`nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04`) with
+Python 3.14, ffmpeg and the locked stack, including faster-whisper. The `calliope` command is
 the ENTRYPOINT, and `calliope` and `python3` are both on `PATH`. Model weights are not in the
 image: `HF_HOME=/cache`, so mount a volume there and the weights download once. The working
 directory is `/books`. Build for `linux/amd64`.
@@ -197,14 +197,15 @@ It exits 0 when the book is done or the inbox is empty, 1 when the book failed.
 | `GPU_PAUSE_TEMP`, `GPU_RESUME_TEMP` | `80`, `70` | passed on to `calliope`: pause above the first, resume below the second (°C); see [GPU temperature](#gpu-temperature) |
 
 ### Running on a Tesla P4 (Pascal, sm_61)
-* **Why CUDA 12.4 and torch 2.6.0:** `torch==2.6.0` is the version `chatterbox-tts` 0.1.7 pins,
-  and its `cu124` wheels are built for `sm_50;sm_60;sm_70;sm_75;sm_80;sm_86;sm_90`. The
-  `sm_60` code runs on the P4's `sm_61`. Newer CUDA 12.8+ PyTorch builds are dropping Pascal,
-  and CUDA 13 removes it, so stay on `cu124`.
-* **Driver:** CUDA 12.4 needs an R550+ driver, or R525+ via minor-version compatibility.
-* **faster-whisper:** pinned to `ctranslate2==4.6.2`, the last CTranslate2 built against
-  CUDA 12.4 and cuDNN 9.1. Later releases target CUDA 12.8. The default `int8` compute type
-  is supported on Pascal (compute capability 6.1); float16 is not efficient there.
+* **Why CUDA 12.6 and torch 2.14:** PyTorch's `cu126` wheels are built for
+  `sm_50;sm_60;sm_70;sm_75;sm_80;sm_86;sm_90`, and the `sm_60` code runs on the P4's `sm_61`.
+  Its CUDA 13 builds start at `sm_75`, and 2.15 stops publishing `cu126`, so torch stays on
+  2.14 and torchaudio on 2.11.0, its last `cu126` release.
+* **Driver:** CUDA 12.6 needs an R560+ driver, or R525+ via minor-version compatibility.
+  R580 is the last driver branch for Pascal.
+* **faster-whisper:** `ctranslate2==4.8.5` is built against CUDA 12.8 for compute
+  capabilities down to 6.1. The default `int8` compute type is supported on Pascal; float16
+  is not efficient there.
 * **Precision and memory:** Chatterbox runs in float32, which is what Pascal is good at.
   Turbo or Multilingual fits in the P4's 8 GB, with room for the Whisper `small` model.
 * **Speed:** see `synthesis_real_time_factor` in the report. Pascal has no tensor cores,

@@ -9,34 +9,34 @@ description = "Turn an EPUB into a narrated EPUB 3 with Media Overlays using loc
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = "==3.12.*"
+requires-python = "==3.14.*"
 dependencies = [
     "beautifulsoup4>=4.12",
     "lxml>=5",
     "nltk>=3.9",
     "num2words==0.5.14",
-    # chatterbox-tts requires numpy < 2 on Python < 3.13.
-    "numpy>=1.26,<2",
+    "numpy>=2.5",
     "soundfile>=0.12",
     "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
-# torch/torchaudio match chatterbox-tts 0.1.7's own pins. On Linux they come from the
-# CUDA 12.4 index (see tool.uv.sources), whose kernels still cover Pascal (sm_61).
+# torch 2.14 is the last PyTorch with CUDA 12.6 wheels, whose kernels still cover Pascal
+# (sm_61); 2.15 drops both. torchaudio 2.11.0 is its last release built for CUDA 12.6. On
+# Linux both come from the CUDA 12.6 index (see tool.uv.sources).
 tts = [
     "chatterbox-tts==0.1.7",
-    "torch==2.6.0",
-    "torchaudio==2.6.0",
+    "torch==2.14.1",
+    "torchaudio==2.11.0",
     # resemble-perth (Chatterbox's watermarker) imports pkg_resources, which setuptools 82
     # removed; without it PerthImplicitWatermarker is None and model loading fails.
     "setuptools<82",
 ]
-# Optional --whisper-check. CTranslate2 4.6.2 is the last release built against CUDA 12.4 and
-# cuDNN 9.1 (4.6.3+ target CUDA 12.8), matching torch 2.6.0+cu124.
+# Optional --whisper-check. CTranslate2 4.8.5 is built against CUDA 12.8 for compute
+# capabilities down to 6.1 (Pascal); CUDA 13, which drops Pascal, would end that.
 whisper = [
     "faster-whisper==1.2.1",
-    "ctranslate2==4.6.2",
+    "ctranslate2==4.8.5",
 ]
 
 [project.scripts]
@@ -55,12 +55,12 @@ environments = [
 exclude-dependencies = ["gradio"]
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
-torchaudio = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
 
 [[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.hatch.build.targets.wheel]

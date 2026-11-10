@@ -4,9 +4,9 @@
 #   podman run --rm --gpus=all -v calliope-cache:/cache -v ./books:/books calliope \
 #       IN.epub OUT.epub --voice voice.wav --lang en
 #
-# torch 2.6.0+cu124 brings its own CUDA 12.4 user-space libraries; the CUDA 12.4 + cuDNN 9 base
+# torch 2.14.1+cu126 brings its own CUDA 12.6 user-space libraries; the CUDA 12.6 + cuDNN 9 base
 # matches them and provides the libraries CTranslate2 (faster-whisper) loads.
-FROM docker.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6
+FROM docker.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04@sha256:5f0d2d827f6436b3cb7468fd8acbdc8c1d41261614e579ae49afe6141da51133
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /uvx /usr/local/bin/
 
@@ -20,7 +20,7 @@ RUN apt-get update \
 
 # UV_NO_CACHE: uv's cache would otherwise land in the layer, a second copy of the venv
 # (UV_LINK_MODE=copy) that doubles the disk a build needs.
-ENV UV_PYTHON=3.12 \
+ENV UV_PYTHON=3.14 \
     UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
@@ -37,9 +37,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
 # The standalone Python's own pip goes: uv installs everything, and pip's vendored certifi,
 # urllib3, msgpack and setuptools lag the locked ones and trip image scans.
-RUN uv python install 3.12 \
-    && rm -rf /opt/python/cpython-3.12*/lib/python3.12/site-packages/pip* \
-        /opt/python/cpython-3.12*/bin/pip* \
+RUN uv python install 3.14 \
+    && rm -rf /opt/python/cpython-3.14*/lib/python3.14/site-packages/pip* \
+        /opt/python/cpython-3.14*/bin/pip* \
     && uv sync --frozen --no-dev --extra tts --extra whisper --no-install-project
 
 COPY src ./src

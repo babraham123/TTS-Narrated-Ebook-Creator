@@ -69,7 +69,7 @@ class ClipCache:
             with open(base + ".json", encoding="utf-8") as f:
                 meta = json.load(f)
             wav, sr = sf.read(base + ".flac", dtype="float32")
-        except (OSError, ValueError, RuntimeError, sf.LibsndfileError):
+        except OSError, ValueError, RuntimeError, sf.LibsndfileError:
             return None
         return wav, sr, meta
 
@@ -98,7 +98,7 @@ class ClipCache:
         try:
             with open(self._transcript_path(key, transcriber_name), encoding="utf-8") as f:
                 entry = json.load(f)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         return entry["text"] if entry.get("attempts") == attempts else None
 

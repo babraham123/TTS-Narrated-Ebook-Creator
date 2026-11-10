@@ -54,15 +54,15 @@
       "rangeStrategy": "update-lockfile"
     },
     {
-      "description": "CUDA 12.4 is the newest whose torch and CTranslate2 builds still run on Pascal (Tesla P4)",
+      "description": "CUDA 12.6 matches torch's cu126 wheels, the last PyTorch builds for Pascal (Tesla P4)",
       "matchPackageNames": [
         "docker.io/nvidia/cuda",
         "nvidia/cuda"
       ],
-      "allowedVersions": "/^12\\.4\\./"
+      "allowedVersions": "/^12\\.6\\./"
     },
     {
-      "description": "Pinned to chatterbox-tts's own torch pins and to the last CTranslate2 built for CUDA 12.4",
+      "description": "torch 2.14 and torchaudio 2.11.0 are the last with CUDA 12.6 wheels, which still run on Pascal; a CTranslate2 built for CUDA 13 would not",
       "matchPackageNames": [
         "torch",
         "torchaudio",
@@ -78,14 +78,7 @@
       "allowedVersions": "<82"
     },
     {
-      "description": "chatterbox-tts 0.1.7 requires numpy < 2 on Python < 3.13, and the project runs on 3.12",
-      "matchPackageNames": [
-        "numpy"
-      ],
-      "allowedVersions": "<2"
-    },
-    {
-      "description": "chatterbox-tts 0.1.7 pins torch 2.6.0, whose CUDA 12.4 wheels stop at Python 3.13; the lock and container use 3.12",
+      "description": "torch 2.14 and torchaudio 2.11.0 have no CUDA 12.6 wheels for Python 3.15, nor does onnxruntime (faster-whisper); the lock and container use 3.14",
       "matchDepTypes": [
         "requires-python"
       ],
