@@ -1376,13 +1376,18 @@ wheels = [
 
 [[package]]
 name = "spacy-pkuseg"
-version = "1.0.1"
+version = "1.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "srsly" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/75/14/c21fc3a5a9cee55c675d864674df0409fd5653b564e968e4ebbf15b461ad/spacy_pkuseg-1.0.1.tar.gz", hash = "sha256:b48078775afff34914375344d56f70a37ec044188ccaece3f70806fd322a47eb", size = 2152318, upload-time = "2025-07-14T10:51:10.048Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/55/9e9cd1063425bb9237196093b0586e221d307247a8dc25d2121882d65d73/spacy_pkuseg-1.0.2.tar.gz", hash = "sha256:20aea9aaece9fcba8e8f295b55b463bf80cd930039a8b600a51346fa73a58697", size = 2206160, upload-time = "2026-10-26T19:37:07.143Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/c2/cee6d8d7bb70b01ca5095bb6cc50c5672ced592f6c7278f61dbb250cd68a/spacy_pkuseg-1.0.2-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:895354620ad91aa938831ea3d8598ef111d5f166e9fa939d8b0726f4461f79cf", size = 2509723, upload-time = "2026-10-26T19:36:35.969Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/59/ceb93e4ec215290d275d641957ff1aa858ab2865cc95696cbd84a8c8655f/spacy_pkuseg-1.0.2-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9cf4722e20a0d44cc9e0d1db336bd4fcf67753c0a5e802b24fd61fb5c35e7ab5", size = 4277893, upload-time = "2026-10-26T19:36:40.735Z" },
+    { url = "https://files.pythonhosted.org/packages/13/d1/531c08aa655971cb808b4432b1fd4eecb6df3fe21ff306690300f8a3cfea/spacy_pkuseg-1.0.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:0965b2b3edd7534457a745c6e1bbdc54b3bdeda6c8e8df96df26cc173b608531", size = 5300141, upload-time = "2026-10-26T19:36:44.701Z" },
+]
 
 [[package]]
 name = "srsly"
