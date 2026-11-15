@@ -28,9 +28,6 @@ tts = [
     "chatterbox-tts==0.1.7",
     "torch==2.14.1",
     "torchaudio==2.11.0",
-    # resemble-perth (Chatterbox's watermarker) imports pkg_resources, which setuptools 82
-    # removed; without it PerthImplicitWatermarker is None and model loading fails.
-    "setuptools<82",
 ]
 # Optional --whisper-check. CTranslate2 4.8.5 is built against CUDA 12.8 for compute
 # capabilities down to 6.1 (Pascal); CUDA 13, which drops Pascal, would end that.
@@ -53,6 +50,10 @@ environments = [
 ]
 # chatterbox-tts requires gradio only for its demo app, which this package never imports.
 exclude-dependencies = ["gradio"]
+# chatterbox-tts pins transformers==5.2.0 and diffusers==0.29.0 exactly; both have remote-code
+# and path-traversal advisories fixed only in later releases, which Chatterbox runs under.
+# diffusers 0.38 needs safetensors 0.8, past Chatterbox's safetensors==0.5.3 pin.
+override-dependencies = ["transformers>=5.10", "diffusers>=0.38", "safetensors>=0.8"]
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]

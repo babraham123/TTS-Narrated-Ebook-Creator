@@ -71,13 +71,6 @@
       "enabled": false
     },
     {
-      "description": "resemble-perth (Chatterbox's watermarker) imports pkg_resources, which setuptools 82 removed",
-      "matchPackageNames": [
-        "setuptools"
-      ],
-      "allowedVersions": "<82"
-    },
-    {
       "description": "torch 2.14 and torchaudio 2.11.0 have no CUDA 12.6 wheels for Python 3.15, nor does onnxruntime (faster-whisper); the lock and container use 3.14",
       "matchDepTypes": [
         "requires-python"

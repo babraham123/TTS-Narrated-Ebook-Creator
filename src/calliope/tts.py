@@ -5,7 +5,10 @@ torch and chatterbox are imported only when a ChatterboxBackend is constructed, 
 rest of the pipeline (and the fake backend) runs without them installed.
 """
 
+import importlib.resources
 import re
+import sys
+import types
 
 import numpy as np
 
@@ -111,6 +114,15 @@ def resolve_model(model, lang):
     return model
 
 
+def _provide_pkg_resources():
+    """resemble-perth (Chatterbox's watermarker) locates its weights with
+    pkg_resources.resource_filename, which setuptools 82 removed; without it
+    PerthImplicitWatermarker is None and model loading fails."""
+    stub = types.ModuleType("pkg_resources")
+    stub.resource_filename = lambda package, name: str(importlib.resources.files(package) / name)
+    sys.modules.setdefault("pkg_resources", stub)
+
+
 class ChatterboxBackend:
     """Chatterbox Turbo (chatterbox.tts_turbo.ChatterboxTurboTTS) or Multilingual
     (chatterbox.mtl_tts.ChatterboxMultilingualTTS), conditioned once on the voice sample."""
@@ -118,6 +130,7 @@ class ChatterboxBackend:
     def __init__(self, model, lang, voice, device="auto"):
         import torch
 
+        _provide_pkg_resources()
         if model == "turbo":
             from chatterbox.tts_turbo import ChatterboxTurboTTS as model_cls
         else:
@@ -137,6 +150,11 @@ class ChatterboxBackend:
         self.lang = lang
         self.device = device
         self.model = model_cls.from_pretrained(device=device)
+        if model == "turbo":
+            # Turbo scales the voice sample by pyloudnorm's float64 gain, which numpy 2 promotes
+            # to a float64 array; the tokenizer's float32 mel filters then refuse to multiply it.
+            norm_loudness = self.model.norm_loudness
+            self.model.norm_loudness = lambda wav, sr: norm_loudness(wav, sr).astype(np.float32)
         # Conditioning once instead of per generate() call avoids re-embedding the voice per chunk.
         self.model.prepare_conditionals(voice)
         self.sr = self.model.sr
