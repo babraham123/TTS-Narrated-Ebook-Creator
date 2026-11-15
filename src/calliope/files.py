@@ -1,7 +1,8 @@
-"""Atomic file writes: write to a temp file in the target directory, then rename over the target.
+"""File helpers: atomic writes and a containment check for paths built from book contents.
 
-A reader (or a rerun after a crash or SIGTERM) therefore sees either the old file or the
-complete new one, never a partial write.
+Atomic writes go to a temp file in the target directory, then rename over the target. A reader
+(or a rerun after a crash or SIGTERM) therefore sees either the old file or the complete new
+one, never a partial write.
 """
 
 import contextlib
@@ -35,3 +36,14 @@ def atomic_write_bytes(path, data):
 
 def atomic_write_text(path, text):
     atomic_write_bytes(path, text.encode("utf-8"))
+
+
+def contained_path(root, path):
+    """Return `path` normalised, or raise ValueError unless it resolves, symlinks included, to
+    somewhere under `root`. A book's hrefs and ids are untrusted, so every path built from them
+    goes through here."""
+    real_root = os.path.realpath(root)
+    if os.path.commonpath([real_root, os.path.realpath(path)]) != real_root:
+        rel = os.path.relpath(os.path.normpath(path), root)
+        raise ValueError(f"unsafe EPUB: {rel!r} resolves outside the build directory")
+    return os.path.normpath(path)

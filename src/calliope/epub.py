@@ -13,7 +13,7 @@ import nltk
 import numpy as np
 from bs4 import BeautifulSoup, CData, NavigableString, Tag
 
-from calliope.files import atomic_output, atomic_write_text
+from calliope.files import atomic_output, atomic_write_text, contained_path
 from calliope.normalize import GROUP_MARK, normalize_symbols
 
 
@@ -34,16 +34,16 @@ def find_opf(work_dir):
     with open(container, "r") as f:
         soup = BeautifulSoup(f, "xml")
     rootfile = soup.find("rootfile")
-    full_path = os.path.join(work_dir, rootfile["full-path"])
+    full_path = contained_path(work_dir, os.path.join(work_dir, rootfile["full-path"]))
     return full_path, os.path.dirname(full_path)
 
 
-def detect_styles_dir(manifest_soup, oebps_dir):
+def detect_styles_dir(manifest_soup, oebps_dir, build_dir):
     css_item = manifest_soup.find("item", attrs={"media-type": "text/css"})
     if css_item:
         href = css_item["href"]
         style_folder = os.path.dirname(href)
-        return os.path.join(oebps_dir, style_folder), style_folder
+        return contained_path(build_dir, os.path.join(oebps_dir, style_folder)), style_folder
     else:
         return os.path.join(oebps_dir, "Styles"), "Styles"
 
@@ -125,7 +125,33 @@ _CJK_SENTENCE_END = re.compile(
     r"(?<=[\N{IDEOGRAPHIC FULL STOP}\N{FULLWIDTH EXCLAMATION MARK}\N{FULLWIDTH QUESTION MARK}!?])"
 )
 
-BLOCK_TAGS = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "div"]
+# Elements narrated as units of their own. A run of text never spans one, so the text of an
+# element before, between and after its nested blocks forms runs of its own.
+BLOCK_TAGS = [
+    "p",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "blockquote",
+    "div",
+    "section",
+    "pre",
+    "dt",
+    "dd",
+    "figcaption",
+    "caption",
+]
+# Never narrated. Tables read aloud badly, cell after cell with no cue for rows or columns, so
+# their cells are skipped (a table's caption is still read); scripts and styles are not prose.
+SKIPPED_TAGS = ["td", "th", "script", "style"]
+_RUN_BREAKS = BLOCK_TAGS + SKIPPED_TAGS
+_TEXT_TYPES = (NavigableString, CData)
+# Dropped from the copy of an inline element reopened in a later sentence: they must stay unique.
+_IDENTITY_ATTRS = {"id", "xml:id", "name"}
 VOID_TAGS = {
     "br",
     "img",
@@ -181,6 +207,33 @@ def _open_tag(name, attrs):
     return f"<{name} {attr_str}>" if attr_str else f"<{name}>"
 
 
+def _reopen_tag(name, attrs):
+    return _open_tag(name, {k: v for k, v in attrs.items() if k not in _IDENTITY_ATTRS})
+
+
+def _breaks_run(node):
+    return isinstance(node, Tag) and (
+        node.name in _RUN_BREAKS or node.find(_RUN_BREAKS) is not None
+    )
+
+
+def _text_runs(parent):
+    """Yield, in reading order, every maximal run of sibling nodes under `parent` that holds no
+    block: the units the text is narrated in."""
+    run = []
+    for child in parent.contents:
+        if _breaks_run(child):
+            if run:
+                yield run
+            run = []
+            if child.name not in SKIPPED_TAGS:
+                yield from _text_runs(child)
+        else:
+            run.append(child)
+    if run:
+        yield run
+
+
 def _sentence_boundaries(full_text_raw, sentences_clean):
     """Map each whitespace-normalised sentence back to its end offset in the raw text."""
     split_indices = []
@@ -221,16 +274,28 @@ def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
         if not any(css_name in l.get("href", "") for l in head.find_all("link")):
             head.append(soup.new_tag("link", rel="stylesheet", href=css_rel_path, type="text/css"))
 
+    body = soup.find("body")
+    root = soup if body is None else body
+
+    # get_text() has nothing for a <br/>, which would glue the lines either side into one word.
+    # A space after it is counted alike by get_text() and traverse(), keeping offsets aligned.
+    for br in root.find_all("br"):
+        following = br.next_sibling
+        if not (type(following) is NavigableString and following[:1].isspace()):
+            br.insert_after(NavigableString(" "))
+
     segments = []
     current_id = global_id_start
 
-    for tag in soup.find_all(BLOCK_TAGS):
-        if tag.find(BLOCK_TAGS):
-            continue
-
+    # Listed up front: wrapping a run replaces its nodes, never a block, so later runs stay put.
+    for run in list(_text_runs(root)):
         # get_text() counts only text and CDATA nodes, so traverse() must skip everything else
         # (comments, processing instructions) to keep the character offsets aligned.
-        full_text_raw = tag.get_text()
+        full_text_raw = "".join(
+            node.get_text() if isinstance(node, Tag) else str(node)
+            for node in run
+            if isinstance(node, Tag) or type(node) in _TEXT_TYPES
+        )
         if not full_text_raw.strip():
             continue
 
@@ -254,7 +319,7 @@ def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
             )
             parts.append(f'<span id="{seg_id}">')
             for t_name, t_attrs in open_tags:
-                parts.append(_open_tag(t_name, t_attrs))
+                parts.append(_reopen_tag(t_name, t_attrs))
 
         def close_sentence(open_tags):
             nonlocal current_sent_idx
@@ -267,13 +332,13 @@ def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
             else:
                 # Trailing text outside any sentence still needs its inline wrappers.
                 for t_name, t_attrs in open_tags:
-                    parts.append(_open_tag(t_name, t_attrs))
+                    parts.append(_reopen_tag(t_name, t_attrs))
 
         def traverse(node, open_tags):
             nonlocal current_char_count
 
             if isinstance(node, NavigableString):
-                if type(node) not in (NavigableString, CData):
+                if type(node) not in _TEXT_TYPES:
                     return
                 text = str(node)
                 while text:
@@ -314,19 +379,23 @@ def process_xhtml_inplace(filepath, global_id_start, css_rel_path, lang="en"):
                     open_tags.pop()
 
         open_sentence([])
-        for child in list(tag.contents):
-            traverse(child, [])
+        for node in run:
+            traverse(node, [])
         if current_sent_idx < len(sentences_clean):
             parts.append("</span>")
 
         # Declare the namespaces the fragment may use so prefixed names (epub:type) parse.
         wrapped_content = f'<body xmlns="{XHTML_NS}" xmlns:epub="{OPS_NS}">{"".join(parts)}</body>'
         new_soup = BeautifulSoup(wrapped_content, "xml")
+        anchor = run[0]
         if new_soup.body is None:
-            raise ValueError(f"{filename}: could not re-parse sentence markup in <{tag.name}>")
-        tag.clear()
+            raise ValueError(
+                f"{filename}: could not re-parse sentence markup in <{anchor.parent.name}>"
+            )
         for child in list(new_soup.body.contents):
-            tag.append(child)
+            anchor.insert_before(child)
+        for node in run:
+            node.extract()
 
     with open(filepath, "w", encoding="utf-8") as f:
         # Use str(soup) instead of prettify to prevent injecting unwanted whitespace

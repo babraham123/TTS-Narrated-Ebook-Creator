@@ -180,8 +180,9 @@ A book is `Title.epub` in `inbox/`, with an optional sidecar `Title.json`:
   `Title.readaloud.epub` and `Title.readaloud.report.json` to `<collection>/Title/` under the
   readalouds directory, the report first, so a reader importing the directory never sees the
   EPUB alone;
-* on an invalid sidecar or a failed `calliope`, moves the book, its sidecar and any output to
-  `failed/` (`failed/Title/` once `calliope` has run);
+* on an invalid sidecar, a failed `calliope` or any other error, moves the book, its sidecar
+  and any output to `failed/Title/` and posts an alert, so the next run moves on to the next
+  book;
 * on SIGTERM or Ctrl-C, stops `calliope` and leaves the book in the inbox, and the next run
   resumes it from the sentence cache.
 

@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from calliope.cache import ClipCache
 from calliope.epub import format_clock
 from conftest import EXPECTED_CHAPTERS, EXPECTED_SENTENCES, spawn_cli
+from epub_factory import tamper
 
 CLOCK = re.compile(r"^(\d+):(\d\d):(\d\d)\.(\d\d\d)$")
 
@@ -262,3 +263,64 @@ def test_sigterm_leaves_a_valid_cache_and_resume_matches_clean_run(
 def test_format_clock():
     assert format_clock(0) == "0:00:00.000"
     assert format_clock(3_723_004) == "1:02:03.004"
+
+
+def _assert_rejected_as_unsafe(result):
+    assert result.code == 1
+    assert result.report["status"] == "failed"
+    assert "unsafe EPUB" in result.report["error"]
+    assert not result.epub.exists()
+
+
+# The build dir is <work>/build and the OPF sits in <work>/build/OEBPS, so "../../x" from the
+# OPF lands in <work>.
+@pytest.mark.parametrize(
+    "entry, old, new, escaped",
+    [
+        ("OEBPS/content.opf", 'href="Text/ch1.xhtml"', 'href="../../x.xhtml"', "x.xhtml"),
+        ("OEBPS/content.opf", 'href="Styles/style.css"', 'href="../../x/style.css"', "x"),
+        (
+            "META-INF/container.xml",
+            'full-path="OEBPS/content.opf"',
+            'full-path="../../x.opf"',
+            "x.opf",
+        ),
+    ],
+    ids=["chapter-href", "css-href", "opf-path"],
+)
+def test_href_escaping_the_build_dir_rejects_the_book(run_cli, tmp_path, entry, old, new, escaped):
+    tamper(run_cli.book, [(entry, old, new)])
+    outside = tmp_path / "work" / escaped
+    planted = "<html><body><p>Planted outside the book.</p></body></html>"
+    if escaped.endswith(".xhtml"):
+        outside.parent.mkdir()
+        outside.write_text(planted)
+
+    _assert_rejected_as_unsafe(run_cli())
+    if escaped.endswith(".xhtml"):
+        assert outside.read_text() == planted
+    else:
+        assert not outside.exists()
+
+
+def test_item_id_escaping_the_build_dir_rejects_the_book(run_cli, tmp_path):
+    # A second chapter named ch1.xhtml gets the item id in its Audio/Smil file names; with
+    # Audio/ch1_x present, "ch1_x/../../../../evil" would land in <work>.
+    with zipfile.ZipFile(run_cli.book) as z:
+        chapter = z.read("OEBPS/Text/ch2.xhtml").decode("utf-8")
+    bad_id = "x/../../../../evil"
+    tamper(
+        run_cli.book,
+        [
+            (
+                "OEBPS/content.opf",
+                '<item id="ch2" href="Text/ch2.xhtml"',
+                f'<item id="{bad_id}" href="Other/ch1.xhtml"',
+            ),
+            ("OEBPS/content.opf", '<itemref idref="ch2"/>', f'<itemref idref="{bad_id}"/>'),
+        ],
+        [("OEBPS/Other/ch1.xhtml", chapter), ("OEBPS/Audio/ch1_x/keep", "")],
+    )
+
+    _assert_rejected_as_unsafe(run_cli())
+    assert glob.glob(str(tmp_path / "work" / "evil*")) == []

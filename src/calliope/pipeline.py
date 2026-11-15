@@ -38,11 +38,13 @@ from calliope.epub import (
     write_nuclear_css,
     zip_dir,
 )
-from calliope.files import atomic_write_text
+from calliope.files import atomic_write_text, contained_path
 from calliope.qa import QAConfig, error_rate, evaluate
 from calliope.tts import CHUNK_CHAR_LIMIT, CROSSFADE_MS, synthesize_sentence
 
 CSS_NAME = "sync_highlight.css"
+AUDIO_DIR = "Audio"
+SMIL_DIR = "Smil"
 
 
 @dataclass
@@ -76,6 +78,8 @@ class Chapter:
     name: str
     href: str
     sentences: list
+    audio_path: str
+    smil_path: str
 
 
 def model_id(model):
@@ -94,7 +98,7 @@ def _prepare_book(opts, build_dir):
     with open(opf_path, "r", encoding="utf-8") as f:
         soup = BeautifulSoup(f, "xml")
 
-    styles_dir, styles_rel_prefix = detect_styles_dir(soup.manifest, oebps_dir)
+    styles_dir, styles_rel_prefix = detect_styles_dir(soup.manifest, oebps_dir, build_dir)
     os.makedirs(styles_dir, exist_ok=True)
     write_nuclear_css(styles_dir, CSS_NAME)
 
@@ -109,7 +113,7 @@ def _prepare_book(opts, build_dir):
         ):
             continue
         href = item["href"]
-        full_path = os.path.join(oebps_dir, urllib.parse.unquote(href))
+        full_path = contained_path(build_dir, os.path.join(oebps_dir, urllib.parse.unquote(href)))
         if full_path in seen_paths:
             continue
         seen_paths.add(full_path)
@@ -118,6 +122,8 @@ def _prepare_book(opts, build_dir):
         if name in used_names:
             name = f"{name}_{item['id']}"
         used_names.add(name)
+        audio_path = contained_path(build_dir, os.path.join(oebps_dir, AUDIO_DIR, f"{name}.mp3"))
+        smil_path = contained_path(build_dir, os.path.join(oebps_dir, SMIL_DIR, f"{name}.smil"))
 
         rel_css = os.path.relpath(os.path.join(styles_dir, CSS_NAME), os.path.dirname(full_path))
         segments, global_id = process_xhtml_inplace(full_path, global_id, rel_css, opts.lang)
@@ -128,7 +134,7 @@ def _prepare_book(opts, build_dir):
                 sentences.append(Sentence(index, name, seg["id"], text))
                 index += 1
         if sentences:
-            chapters.append(Chapter(item["id"], name, href, sentences))
+            chapters.append(Chapter(item["id"], name, href, sentences, audio_path, smil_path))
 
     return (
         opf_path,
@@ -296,10 +302,8 @@ def run(opts, make_backend, transcriber_factory=None, log=print, guard=None):
         log(f"{len(flagged)} sentences flagged by quality checks")
 
     log("--- Assembling audio and overlays ---")
-    audio_dir = os.path.join(oebps_dir, "Audio")
-    smil_dir = os.path.join(oebps_dir, "Smil")
-    os.makedirs(audio_dir, exist_ok=True)
-    os.makedirs(smil_dir, exist_ok=True)
+    os.makedirs(os.path.join(oebps_dir, AUDIO_DIR), exist_ok=True)
+    os.makedirs(os.path.join(oebps_dir, SMIL_DIR), exist_ok=True)
 
     manifest_additions = [{"id": "sync_css", "href": css_href, "media-type": "text/css"}]
     spine_mapping, durations_ms = {}, {}
@@ -312,22 +316,22 @@ def run(opts, make_backend, transcriber_factory=None, log=print, guard=None):
         audio, clips, duration_ms = assemble_chapter(sentence_wavs, sr)
 
         encoding = {"format": "mp3", "bitrate": MP3_BITRATE, "sr": sr, "gap": SENTENCE_GAP_SECONDS}
-        cached_mp3 = cache.chapter_path([s.key for s in ch.sentences], encoding)
+        cached_mp3 = cache.chapter_path(audio, encoding)
         if not os.path.exists(cached_mp3):
             encode_mp3(audio, sr, cached_mp3)
-        shutil.copyfile(cached_mp3, os.path.join(audio_dir, f"{ch.name}.mp3"))
+        shutil.copyfile(cached_mp3, ch.audio_path)
 
-        smil = create_smil_content(
-            f"{ch.name}_seq", clips, f"../Audio/{ch.name}.mp3", f"../{ch.href}"
-        )
-        atomic_write_text(os.path.join(smil_dir, f"{ch.name}.smil"), smil)
+        audio_href = f"{AUDIO_DIR}/{ch.name}.mp3"
+        smil_href = f"{SMIL_DIR}/{ch.name}.smil"
+        smil = create_smil_content(f"{ch.name}_seq", clips, f"../{audio_href}", f"../{ch.href}")
+        atomic_write_text(ch.smil_path, smil)
 
         smil_id = f"smil_{ch.name}"
         manifest_additions.append(
-            {"id": smil_id, "href": f"Smil/{ch.name}.smil", "media-type": "application/smil+xml"}
+            {"id": smil_id, "href": smil_href, "media-type": "application/smil+xml"}
         )
         manifest_additions.append(
-            {"id": f"audio_{ch.name}", "href": f"Audio/{ch.name}.mp3", "media-type": "audio/mpeg"}
+            {"id": f"audio_{ch.name}", "href": audio_href, "media-type": "audio/mpeg"}
         )
         spine_mapping[ch.item_id] = smil_id
         durations_ms[smil_id] = duration_ms

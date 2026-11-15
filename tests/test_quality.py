@@ -60,6 +60,10 @@ def test_exhausted_retries_keep_best_attempt_and_flag_it(run_cli):
     fixed = run_cli("fixed.epub", extra=["--max-retries", "6"])
     assert fixed.report["attempts_this_run"] == 1
     assert fixed.report["flagged"] == []
+    # The regenerated clip is in chapter one, so its audio is encoded afresh.
+    chapter_one = "OEBPS/Audio/ch1.mp3"
+    assert fixed.read_bytes(chapter_one) != result.read_bytes(chapter_one)
+    assert fixed.read_bytes("OEBPS/Audio/ch2.mp3") == result.read_bytes("OEBPS/Audio/ch2.mp3")
 
 
 @pytest.mark.parametrize(

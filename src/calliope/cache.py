@@ -108,8 +108,9 @@ class ClipCache:
             self._transcript_path(key, transcriber_name), json.dumps(entry, ensure_ascii=False)
         )
 
-    def chapter_path(self, clip_keys, encoding):
-        """Location of the encoded MP3 for a chapter made of these clips, in this order."""
+    def chapter_path(self, audio, encoding):
+        """Location of the encoded MP3 for this chapter audio, keyed by the samples themselves."""
+        audio_sha = hashlib.sha256(audio.tobytes()).hexdigest()
         return os.path.join(
-            self.chapters_dir, _digest({"clips": clip_keys, "encoding": encoding}) + ".mp3"
+            self.chapters_dir, _digest({"audio": audio_sha, "encoding": encoding}) + ".mp3"
         )

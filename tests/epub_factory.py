@@ -102,3 +102,18 @@ def make_epub(path, chapters=CHAPTERS):
         for n, (title, paragraphs) in zip(names, chapters):
             z.writestr(f"OEBPS/Text/{n}.xhtml", _chapter_xhtml(title, paragraphs))
     return path
+
+
+def tamper(path, replacements=(), extra=()):
+    """Rewrite the EPUB at `path` in place: each (name, old, new) replaces text in an entry and
+    each (name, text) adds one."""
+    with zipfile.ZipFile(path) as z:
+        entries = {name: z.read(name).decode("utf-8") for name in z.namelist()}
+    for name, old, new in replacements:
+        assert old in entries[name], (name, old)
+        entries[name] = entries[name].replace(old, new)
+    entries.update(extra)
+    with zipfile.ZipFile(path, "w") as z:
+        for name, text in entries.items():
+            z.writestr(name, text)
+    return path

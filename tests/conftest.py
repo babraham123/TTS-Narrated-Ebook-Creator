@@ -77,9 +77,12 @@ class Result:
     def bytes(self):
         return self.epub.read_bytes()
 
-    def read(self, name):
+    def read_bytes(self, name):
         with zipfile.ZipFile(self.epub) as z:
-            return z.read(name).decode("utf-8")
+            return z.read(name)
+
+    def read(self, name):
+        return self.read_bytes(name).decode("utf-8")
 
 
 @pytest.fixture

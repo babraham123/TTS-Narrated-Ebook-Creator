@@ -5,7 +5,7 @@
 # until the inbox is empty.
 # Inbox: Title.epub, optionally Title.json with {"lang", "voice", "collection"}.
 # A book stopped part way (SIGTERM, Ctrl-C) stays in the inbox, and its sentence cache in
-# work/ lets the next run resume it. A failed one moves to failed/.
+# work/ lets the next run resume it. A failed one moves to failed/Title/.
 # Environment:
 #   NARRATE_DIR        holds inbox/, work/ and failed/ (default /narrate)
 #   READALOUDS_DIR     delivers to <collection>/<Title>/ under it (default /readalouds)
@@ -79,9 +79,14 @@ def stop(signum, frame):
 def options(book):
     spec = book.with_suffix(".json")
     opts = json.loads(spec.read_text()) if spec.exists() else {}
+    if not isinstance(opts, dict):
+        raise ValueError(f"{spec.name} must hold a JSON object, not {type(opts).__name__}")
     opts.setdefault("lang", "en")
     opts.setdefault("voice", "default")
     opts.setdefault("collection", "books")
+    for key in ("lang", "voice", "collection"):
+        if not isinstance(opts[key], str):
+            raise ValueError(f"{key} must be a string: {opts[key]!r}")
     for key in ("voice", "collection"):
         if not safe_name.match(opts[key]):
             raise ValueError(f"{key} must match {safe_name.pattern}: {opts[key]!r}")
@@ -99,34 +104,15 @@ def move_inputs(book, dest):
             shutil.move(str(f), dest / f.name)
 
 
-def main():
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
-    for d in (inbox, work, failed):
-        d.mkdir(parents=True, exist_ok=True)
-
-    books = sorted(inbox.glob("*.epub"), key=lambda p: p.stat().st_mtime)
-    if not books:
-        log("inbox is empty")
-        return 0
-    book = books[0]
-    title = book.stem
-    staging = work / title / "out"
-    log(f"narrating {book.name}")
-
-    try:
-        opts = options(book)
-    except (ValueError, json.JSONDecodeError) as e:
-        log(f"error: {book.name}: {e}")
-        move_inputs(book, failed)
-        notify("Narration failed", f"{title}: {e}", 4)
-        return 1
-
-    voice = voices / f"{opts['voice']}.wav"
+def narrate(book, staging):
+    """Narrate `book` into `staging`; return (options, hours taken). Raises on any failure."""
+    global child
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
-    global child
+    opts = options(book)
+    voice = voices / f"{opts['voice']}.wav"
+    title = book.stem
     started = time.monotonic()
     child = subprocess.Popen(
         [
@@ -143,14 +129,38 @@ def main():
     )
     rc = child.wait()
     hours = (time.monotonic() - started) / 3600
-
     if rc != 0:
-        log(f"error: calliope exited {rc} on {book.name} after {hours:.1f} h")
+        raise RuntimeError(f"calliope exited {rc} after {hours:.1f} h")
+    return opts, hours
+
+
+def main():
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    for d in (inbox, work, failed):
+        d.mkdir(parents=True, exist_ok=True)
+
+    books = sorted(inbox.glob("*.epub"), key=lambda p: p.stat().st_mtime)
+    if not books:
+        log("inbox is empty")
+        return 0
+    book = books[0]
+    title = book.stem
+    staging = work / title / "out"
+    log(f"narrating {book.name}")
+
+    # Any failure moves the book out of the inbox, or the oldest-first queue would retry it
+    # forever. SIGTERM and Ctrl-C exit through stop() and leave it there to resume.
+    try:
+        opts, hours = narrate(book, staging)
+    except Exception as e:
+        log(f"error: {book.name}: {e}")
         dest = failed / title
         move_inputs(book, dest)
-        for f in staging.iterdir():
-            shutil.move(str(f), dest / f.name)
-        notify("Narration failed", f"{title}: calliope exited {rc}; see {dest}", 4)
+        if staging.exists():
+            for f in staging.iterdir():
+                shutil.move(str(f), dest / f.name)
+        notify("Narration failed", f"{title}: {e}; see {dest}", 4)
         return 1
 
     dest = readalouds / opts["collection"] / title
